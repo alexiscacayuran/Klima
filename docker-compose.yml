@@ -1,0 +1,27 @@
+services:
+  # Default service: `docker compose up` -> Vite dev server with HMR on :5173
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./client:/app
+      # Anonymous volume keeps the image's node_modules from being shadowed by the
+      # bind mount above (host modules may be built for a different platform).
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    stdin_open: true
+    tty: true
+
+  # Production build served by nginx: `docker compose --profile prod up --build`
+  client-prod:
+    profiles: ["prod"]
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    restart: unless-stopped
