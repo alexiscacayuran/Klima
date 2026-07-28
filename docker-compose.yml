@@ -4,6 +4,9 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile.dev
+    # Container names are a global Docker namespace, not per-project. Plain
+    # "client-dev"/"client" collide with the CIS project's containers.
+    container_name: klima-client-dev
     ports:
       - "5173:5173"
     volumes:
@@ -19,6 +22,7 @@ services:
   # Production build served by nginx: `docker compose --profile prod up --build`
   client-prod:
     profiles: ["prod"]
+    container_name: klima-client
     build:
       context: ./client
       dockerfile: Dockerfile
