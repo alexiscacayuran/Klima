@@ -6,7 +6,7 @@
     "module": "esnext",
     "types": ["vite/client"],
 
-    /* Path alias — keep imports flat across the nested src/map tree.
+    /* Path alias — keep imports flat across nested source trees.
        Mirrored by resolve.alias in vite.config.ts. Resolved relative to this
        file; "baseUrl" is deprecated in TS 6 and is not needed for it. */
     "paths": {

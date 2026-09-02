@@ -1,10 +1,14 @@
 <!doctype html>
-<html lang="en">
+<!-- Dark by default: the app opens on the dark basemap, and a light shell
+     around a dark map is the one combination that reads badly. Drop the class
+     to start light, or swap it at runtime once a theme toggle exists. -->
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>client</title>
+    <meta name="color-scheme" content="dark light" />
+    <title>Klima — Philippine weather map</title>
   </head>
   <body>
     <div id="root"></div>

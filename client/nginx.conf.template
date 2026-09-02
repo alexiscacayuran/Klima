@@ -11,6 +11,34 @@ server {
         try_files $uri =404;
     }
 
+    # Vector tiles come from Martin, which belongs to the CIS stack, not this
+    # one. Proxying here rather than pointing the browser straight at Martin is
+    # what makes the tile origin same-origin in production: no CORS preflight on
+    # every tile, and no hard-coded backend host in the built bundle.
+    #
+    # config/martin.ts defaults VITE_TILES_URL to "/tiles" in a production
+    # build, so this location and that default are one contract — change either
+    # and change both. TILES_UPSTREAM is substituted at container start; see
+    # docker-compose.yml.
+    location /tiles/ {
+        proxy_pass         ${TILES_UPSTREAM}/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # Martin transcodes MVT->MLT based on Accept, so a cached tile must not
+        # be replayed to a client that asked for the other encoding.
+        proxy_set_header   Accept $http_accept;
+        proxy_cache_key    "$scheme$request_method$host$request_uri$http_accept";
+
+        # Tiles are immutable for a given level; the query string is part of
+        # $request_uri, so each ?level= caches independently.
+        expires 1h;
+        add_header Cache-Control "public, max-age=3600";
+    }
+
     # SPA fallback: unknown paths render the app, which handles routing.
     location / {
         add_header Cache-Control "no-cache";

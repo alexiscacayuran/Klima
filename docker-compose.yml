@@ -16,6 +16,12 @@ services:
       - /app/node_modules
     environment:
       - NODE_ENV=development
+      # Martin lives in the CIS stack, not here. MapLibre requests tiles from
+      # the *browser*, so this is resolved on the host, not inside this
+      # container — hence a published host port rather than a service name.
+      # Martin echoes the request Origin in its CORS headers, so no proxy is
+      # needed in development.
+      - VITE_TILES_URL=http://localhost:3001
     stdin_open: true
     tty: true
 
@@ -27,5 +33,18 @@ services:
       context: ./client
       dockerfile: Dockerfile
     ports:
-      - "8080:80"
+      # Not 8080: host ports are a global namespace like container names, and
+      # the CIS stack's nominatim-dev already publishes 8080.
+      - "8081:80"
+    environment:
+      # The production bundle requests same-origin "/tiles", which nginx proxies
+      # here. Unlike the dev var above, this one is resolved inside the
+      # container, so it goes back out through the host gateway to reach the
+      # CIS stack's published Martin port.
+      - TILES_UPSTREAM=http://host.docker.internal:3001
+    extra_hosts:
+      # host.docker.internal is not defined on plain Linux/WSL2 engines the way
+      # it is on Docker Desktop; mapping it explicitly makes the proxy above
+      # work on both.
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

@@ -14,7 +14,17 @@ RUN npm run build
 # --- Stage 2: serve it ----------------------------------------------------
 FROM nginx:1.29-alpine AS runtime
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# A template, not a finished config: the nginx image's entrypoint runs envsubst
+# over /etc/nginx/templates/*.template at start-up, which is what lets one image
+# be pointed at a different Martin without a rebuild. Only variables that exist
+# in the environment are substituted, so nginx's own $host/$remote_addr are left
+# alone.
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+
+# Where Martin lives, as seen from *this container*. The CIS stack publishes it
+# on the host, so the default reaches back out through the Docker host gateway;
+# override in docker-compose.yml when the two stacks share a network.
+ENV TILES_UPSTREAM=http://host.docker.internal:3001
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

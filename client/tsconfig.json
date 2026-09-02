@@ -3,5 +3,15 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ]
+  ],
+  /* Compiles nothing ("files": []). This block exists purely so tooling that
+     reads the root tsconfig — the shadcn CLI in particular — can resolve "@/".
+     Without it the CLI cannot expand the alias and writes components to a
+     literal "@/" folder next to package.json instead of into src/. */
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
 }
