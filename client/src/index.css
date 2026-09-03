@@ -134,6 +134,121 @@
    rewrites it, so keep app CSS below.
    --------------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------------
+   PAGASA CIS design tokens
+
+   The map chrome is drawn from the PAGASA CIS design system, whose foundation
+   is shadcn zinc with exactly two accents — azure (brand) and green (positive).
+   Values are copied from its `tokens/` files rather than re-derived.
+
+   These are additive on purpose: the shadcn semantic tokens above (--primary,
+   --background, …) are left pointing at stock neutrals, so nothing that already
+   ships changes appearance. Only components that opt in with `bg-panel`,
+   `text-fg-heading`, `font-cis` and friends pick up the CIS look. Repointing
+   --primary at --cis-brand is the one-line change that would take the whole app
+   over, once every surface has been converted.
+
+   The design system resolves light/dark through `prefers-color-scheme`; this
+   app switches on a `.dark` class (see index.html), so the two value sets are
+   attached to :root and .dark instead. Same numbers, different trigger.
+   --------------------------------------------------------------------------- */
+
+@theme inline {
+  --font-cis: 'IBM Plex Sans Variable', 'IBM Plex Sans', system-ui, sans-serif;
+  --font-cis-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Azure, the one accent. The -soft/-medium/-strong steps are *fills*; the
+     text colour that reads on them is --color-fg-brand-strong, which is a
+     separate step in the CIS scale rather than the same value. */
+  --color-brand: var(--cis-brand);
+  --color-brand-softer: var(--cis-brand-softer);
+  --color-brand-soft: var(--cis-brand-soft);
+  --color-brand-medium: var(--cis-brand-medium);
+  --color-brand-strong: var(--cis-brand-strong);
+  --color-fg-brand-strong: var(--cis-fg-brand-strong);
+
+  /* Floating chrome fills. Translucent by design — every panel in the layout
+     sits over the map and is expected to be paired with `backdrop-blur-md`. */
+  --color-panel: var(--cis-panel);
+  --color-panel-strong: var(--cis-panel-strong);
+  /* Opaque inset surface: search fields and other wells punched into a panel. */
+  --color-well: var(--cis-well);
+
+  --color-line: var(--cis-line);
+  --color-line-strong: var(--cis-line-strong);
+
+  --color-fg-heading: var(--cis-fg-heading);
+  --color-fg-body: var(--cis-fg-body);
+  --color-fg-subtle: var(--cis-fg-subtle);
+
+  /* 8px is the CIS product default (panels, buttons, cards); 6px is for inputs
+     and badges. Named rather than folded into the --radius scale above, which
+     is proportional to shadcn's 0.625rem and would drift off the 4px grid. */
+  --radius-panel: 8px;
+  --radius-field: 6px;
+
+  --shadow-panel: var(--cis-shadow-panel);
+  --shadow-float: var(--cis-shadow-float);
+  /* CIS "glint": every solid button carries it — a hairline base shadow, an
+     inset top highlight, and a soft outer glow. It is what separates a filled
+     button from a coloured rectangle in this system. */
+  --shadow-glint: var(--cis-glint);
+}
+
+:root {
+  --cis-brand: #0196b0;
+  --cis-brand-softer: #e6f6f9;
+  --cis-brand-soft: #c2e9ef;
+  --cis-brand-medium: #7fcbd8;
+  --cis-brand-strong: #017a8f;
+  --cis-fg-brand-strong: #017a8f;
+
+  --cis-panel: color-mix(in srgb, #ffffff 92%, transparent);
+  --cis-panel-strong: color-mix(in srgb, #ffffff 96%, transparent);
+  --cis-well: #f4f4f5;
+
+  --cis-line: #e4e4e7;
+  --cis-line-strong: #d4d4d8;
+
+  --cis-fg-heading: #09090b;
+  --cis-fg-body: #71717a;
+  --cis-fg-subtle: #a1a1aa;
+
+  /* CIS elevation is border-led; these are the two steps the map layout uses,
+     at the alpha the design pinned for chrome floating over imagery. */
+  --cis-shadow-panel: 0 4px 6px -1px rgb(0 0 0 / 0.12);
+  --cis-shadow-float: 0 10px 15px -3px rgb(0 0 0 / 0.12);
+  --cis-glint:
+    0 1px rgb(0 0 0 / 0.05), inset rgb(255 255 255 / 0.06) 0 6px 0 -5px,
+    rgb(0 0 0 / 0.04) 0 4px 10px -5px;
+}
+
+.dark {
+  --cis-brand: #2bb4cc;
+  --cis-brand-softer: #07252b;
+  --cis-brand-soft: #0b3a43;
+  --cis-brand-medium: #0e4a55;
+  --cis-brand-strong: #57c9dc;
+  --cis-fg-brand-strong: #7fe0ee;
+
+  --cis-panel: color-mix(in srgb, #18181b 92%, transparent);
+  --cis-panel-strong: color-mix(in srgb, #18181b 96%, transparent);
+  --cis-well: #09090b;
+
+  --cis-line: #27272a;
+  --cis-line-strong: #3f3f46;
+
+  --cis-fg-heading: #fafafa;
+  --cis-fg-body: #a1a1aa;
+  --cis-fg-subtle: #71717a;
+
+  --cis-shadow-panel: 0 4px 6px -1px rgb(0 0 0 / 0.4);
+  --cis-shadow-float: 0 10px 15px -3px rgb(0 0 0 / 0.4);
+  --cis-glint:
+    0 1px rgb(0 0 0 / 0.05), inset rgb(255 255 255 / 0.04) 0 6px 0 -5px,
+    rgb(0 0 0 / 0.06) 0 4px 10px -5px;
+}
+
 @layer base {
   /* MapLibre measures its container on resize; a percentage-height chain that
      reaches an auto-height ancestor collapses the canvas to zero. Anchoring the

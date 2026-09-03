@@ -72,3 +72,4 @@ package-lock.json
 .claude/skills/
 .claude/agents/
 
+.codeatlas
