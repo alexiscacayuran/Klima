@@ -16,29 +16,59 @@ export const MAP_ID = 'main'
 /**
  * Client-side source ids.
  *
- * `boundaries` intentionally does not match Martin's `admin_boundaries` — the
- * server names the dataset, the style names the binding target. Keeping them
- * separate means a server-side rename does not touch every layer and every
+ * These intentionally do not match Martin's `admin_boundaries` — the server
+ * names the dataset, the style names the binding target. Keeping them separate
+ * means a server-side rename does not touch every layer and every
  * setFeatureState call.
+ *
+ * Two of them, because the map draws two administrative tiers at once off the
+ * same Martin source: the tier the selected product publishes at, and the tier
+ * above it. One source cannot serve both — the level is a query parameter on the
+ * tile URL, and a source has exactly one — so the pair is two sources with one
+ * URL each. Which levels they carry is the product's business, not theirs; see
+ * sources/AdminBoundaries.
  */
 export const SOURCE_IDS = {
-  boundaries: 'boundaries',
+  /** The tier above the product's resolution: the always-drawn overview. */
+  boundariesParent: 'boundaries-parent',
+  /**
+   * The product's own resolution — revealed inside the focused parent, and the
+   * tier climate data joins to, since it is the tier the API publishes at.
+   */
+  boundariesChild: 'boundaries-child',
 } as const
 
 export const LAYER_IDS = {
-  boundariesLine: 'boundaries-line',
-  boundariesFill: 'boundaries-fill',
+  boundariesParentFill: 'boundaries-parent-fill',
+  boundariesParentLine: 'boundaries-parent-line',
+  boundariesChildFill: 'boundaries-child-fill',
+  boundariesChildLine: 'boundaries-child-line',
 } as const
 
 /**
- * Layers the map hit-tests on click/hover, topmost first.
+ * Layers the map hit-tests on click and on mousemove, topmost first.
  *
- * Wired into <Map interactiveLayerIds>. The fill layer is listed rather than the
- * line because a 1px stroke is a hostile click target; the fill is painted at
- * near-zero opacity precisely so it can absorb hits (see sources/AdminBoundaries).
+ * The fill layers are listed rather than the lines because a 1px stroke is a
+ * hostile click target; the fills are painted at near-zero opacity precisely so
+ * they can absorb hits (see sources/AdminBoundaries).
+ *
+ * Order matters. A child sits *inside* its parent, so a point over one is over
+ * both; listing the child first is what makes the finer unit win, which is what
+ * interactions/useBoundaryFocus reads as the location. The child fill is painted
+ * across the whole country for exactly this reason — it answers everywhere, not
+ * only where its outlines are drawn, so a click lands on a province rather than
+ * on the region containing it even when that region is not the open one.
+ *
+ * Also wired into <Map interactiveLayerIds> so map-level pointer handlers get
+ * the same features. react-maplibre drops ids that are not in the style before
+ * querying, so listing the child layer costs nothing while a product publishes
+ * at level 1 and mounts no child tier.
  *
  * Do not pass an *empty* array to <Map interactiveLayerIds>: react-maplibre
  * treats any array as "tracking on" and queries with `layers: []`, which
  * hit-tests every layer in the style rather than none.
  */
-export const INTERACTIVE_LAYER_IDS: string[] = [LAYER_IDS.boundariesFill]
+export const INTERACTIVE_LAYER_IDS: string[] = [
+  LAYER_IDS.boundariesChildFill,
+  LAYER_IDS.boundariesParentFill,
+]

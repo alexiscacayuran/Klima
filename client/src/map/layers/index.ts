@@ -16,9 +16,17 @@ import { LAYER_IDS } from '@/map/config/constants'
  */
 export const LAYER_ORDER: string[] = [
   // Weather rasters and choropleth fills belong here, *below* the boundary
-  // stroke, so administrative edges stay readable on top of data.
-  LAYER_IDS.boundariesFill,
-  LAYER_IDS.boundariesLine,
+  // strokes, so administrative edges stay readable on top of data. A
+  // choropleth of the product's own resolution paints on the child tier, which
+  // is the tier the API publishes at; anything aggregated up to the parent
+  // paints on the parent fill.
+  LAYER_IDS.boundariesParentFill,
+  LAYER_IDS.boundariesParentLine,
+  // The revealed tier draws over its parent's stroke on purpose: it is the
+  // thing being examined, and its fills are translucent enough to leave the
+  // frame around it visible.
+  LAYER_IDS.boundariesChildFill,
+  LAYER_IDS.boundariesChildLine,
 ]
 
 /**

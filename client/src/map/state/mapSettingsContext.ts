@@ -17,12 +17,15 @@ export type MapSettings = {
   basemap: BasemapId
   setBasemap: (id: BasemapId) => void
 
-  /** Which administrative tier admin_boundaries serves. */
-  adminLevel: AdminLevel
   /**
-   * Changing this must also clear feature state — ids are only unique within a
-   * level. AdminBoundaries owns that side effect; see the comment there.
+   * Which administrative tier admin_boundaries serves.
+   *
+   * No longer read by the map: the selected product's spatial resolution
+   * decides the tiers now (see sources/AdminBoundaries), and a manual override
+   * would only disagree with it. Kept for the unmounted AdminLevelSelect, and
+   * should be deleted with it — see the note in MapRoot.
    */
+  adminLevel: AdminLevel
   setAdminLevel: (level: AdminLevel) => void
 
   showBoundaries: boolean
