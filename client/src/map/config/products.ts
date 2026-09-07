@@ -1,5 +1,6 @@
 import { CloudRain, Thermometer } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { AdminLevel } from "@/map/types/features";
 
 /**
  * The PAGASA product catalogue the left rail lists.
@@ -44,6 +45,18 @@ export type ProductDefinition = {
   /** Stable id; also the accordion's open/closed key. */
   id: string;
   label: string;
+  /**
+   * The administrative tier the product publishes at — which is what the map
+   * has to resolve to for it, and therefore which pair of boundary levels it
+   * draws (see boundaryLevels). Seasonal rainfall is issued per province, so
+   * selecting it puts provinces on the map and regions around them.
+   *
+   * A property of the *product*, not of a variable: an issuance is published at
+   * one resolution and every quantity in it shares that resolution. Absent
+   * until CIS confirms one — the fallback is DEFAULT_SPATIAL_LEVEL, and
+   * guessing here would silently change what the map hit-tests.
+   */
+  spatialLevel?: AdminLevel;
   /** Empty or absent until CIS publishes a mappable layer for the product. */
   variables?: readonly ProductVariable[];
 };
@@ -55,6 +68,10 @@ export const PRODUCTS: readonly ProductDefinition[] = [
   {
     id: "seasonal",
     label: "Seasonal Forecast",
+    // `GET /seasonal` resolves a location to provinces and publishes one row per
+    // province per month; the station shape is the same issuance at points, not
+    // a finer polygon tier. See docs/cis-api.md §5.
+    spatialLevel: 2,
     variables: [
       {
         id: "rainfall",
@@ -92,6 +109,37 @@ export const variableKey = (
   layerId
     ? `${productId}:${variableId}:${layerId}`
     : `${productId}:${variableId}`;
+
+/** The product half of a `variableKey` — the first segment, always present. */
+export const productIdFromKey = (key: string): string => key.split(":")[0];
+
+export const findProduct = (
+  productId: string,
+): ProductDefinition | undefined =>
+  PRODUCTS.find((product) => product.id === productId);
+
+/**
+ * Provinces, for a product that has not declared its own resolution.
+ *
+ * Every CIS product that publishes polygons publishes at province level —
+ * drought, five-day and seasonal all resolve a location to provinces — so this
+ * is the shape of the data rather than an arbitrary default. Daily monitoring
+ * is the exception, and it is points, not polygons.
+ */
+export const DEFAULT_SPATIAL_LEVEL: AdminLevel = 2;
+
+/**
+ * The tier the map should resolve to for a selected layer.
+ *
+ * Keyed off the *selected* variable rather than the expanded accordion product,
+ * because expanding a product paints nothing — only the innermost row does, and
+ * the boundaries have to agree with what is painted rather than with what the
+ * rail happens to be showing.
+ */
+export function spatialLevelForVariable(key: string | null): AdminLevel {
+  if (!key) return DEFAULT_SPATIAL_LEVEL;
+  return findProduct(productIdFromKey(key))?.spatialLevel ?? DEFAULT_SPATIAL_LEVEL;
+}
 
 /** What the map opens on: the product the rail expands and the layer it paints. */
 export const DEFAULT_PRODUCT_ID = "seasonal";

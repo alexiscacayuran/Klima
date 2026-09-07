@@ -9,13 +9,13 @@ import { AdminBoundaries } from "./sources/AdminBoundaries";
 import { useBasemapStyle } from "./hooks/useBasemapStyle";
 import { useElasticBounds } from "./interactions/useElasticBounds";
 import { MapSettingsProvider } from "./state/MapSettingsProvider";
+import { SelectionProvider } from "./state/SelectionProvider";
 import { useMapSettings } from "./state/useMapSettings";
+import { useSelection } from "./state/useSelection";
 import { INTERACTIVE_LAYER_IDS, MAP_ID } from "./config/constants";
 import {
-  DEFAULT_LAYER_ID,
   DEFAULT_MONTH_ID,
   DEFAULT_PRODUCT_ID,
-  DEFAULT_VARIABLE_ID,
   SEASONAL_OUTLOOK_MONTHS,
   variableKey,
 } from "./config/products";
@@ -34,8 +34,8 @@ import "maplibre-gl/dist/maplibre-gl.css";
  * Data layers, in paint order — bottom first.
  *
  * Mount order here *is* draw order in MapLibre, so this must match LAYER_ORDER
- * in layers/index.ts. Weather overlays belong above AdminBoundaries' fill and
- * below its stroke; see the note in that file.
+ * in layers/index.ts. Weather overlays belong above AdminBoundaries' fills and
+ * below its strokes; see the note in that file.
  */
 function DataLayers() {
   return <AdminBoundaries />;
@@ -93,21 +93,22 @@ function MapScene() {
 /**
  * The chrome floating over the map: product rail, title/search bar, timeline.
  *
- * Holds the selection state the three share rather than pushing it into
- * MapSettingsContext, which is deliberately scoped to settings the *map style*
- * reads (basemap, admin level, layer visibility). What is being forecast and
- * for which month is product state; it moves into the context — or a store —
- * when a layer actually consumes it.
+ * The selected layer lives in SelectionContext rather than here, because a
+ * layer now consumes it: the product's spatial resolution is what decides which
+ * administrative tiers AdminBoundaries draws, and that component is inside
+ * <Map> with no prop path to this one.
+ *
+ * Which product is *expanded* and which month is scrubbed to stay local. They
+ * change nothing outside this box yet, and they follow the selected layer in
+ * when something on the map reads them.
  *
  * Absolute positioning with a pointer-events-none parent so the gaps between
  * panels stay draggable map. Each panel opts its own box back in.
  */
 function MapChrome() {
+  const { variable, setVariable } = useSelection();
   const [openProductId, setOpenProductId] = useState<string | null>(
     DEFAULT_PRODUCT_ID,
-  );
-  const [selectedVariable, setSelectedVariable] = useState<string | null>(
-    variableKey(DEFAULT_PRODUCT_ID, DEFAULT_VARIABLE_ID, DEFAULT_LAYER_ID),
   );
   const [month, setMonth] = useState<string>(DEFAULT_MONTH_ID);
   const [query, setQuery] = useState("");
@@ -124,9 +125,9 @@ function MapChrome() {
         className="absolute top-20 left-6 max-h-[calc(100%-13rem)] overflow-y-auto"
         openProductId={openProductId}
         onOpenProductChange={setOpenProductId}
-        selectedVariable={selectedVariable}
+        selectedVariable={variable}
         onSelectVariable={(productId, variableId, layerId) =>
-          setSelectedVariable(variableKey(productId, variableId, layerId))
+          setVariable(variableKey(productId, variableId, layerId))
         }
       />
 
@@ -156,24 +157,30 @@ function MapChrome() {
  *
  * MapProvider is what makes the instance addressable by id from siblings, so
  * the toolbar and panels can reach it without being children of <Map>.
- * MapSettingsProvider wraps both for the same reason.
+ * MapSettingsProvider and SelectionProvider wrap both for the same reason: the
+ * rail writes the selected layer that the boundary source reads, and the
+ * boundary source writes the location that the chrome will read back.
  *
  * MapToolbar and LayerPanel are no longer mounted: the imported design puts the
  * product rail where LayerPanel sat and the title bar where the toolbar sat,
  * and two panels in one box is not a layout. Both files are untouched on disk —
  * re-adding either is one line — but the controls they carry (basemap toggle,
- * admin level, the tiles-offline badge, overlay switches) currently have no
- * home in the new chrome and need folding into it.
+ * the tiles-offline badge, overlay switches) currently have no home in the new
+ * chrome and need folding into it. AdminLevelSelect is the exception: the
+ * product now decides the administrative tiers, so a manual picker would be a
+ * second, disagreeing source of truth. It should go when the rest is folded in.
  */
 export function MapRoot() {
   return (
     <MapSettingsProvider>
-      <MapProvider>
-        <div className="relative size-full overflow-hidden">
-          <MapScene />
-          <MapChrome />
-        </div>
-      </MapProvider>
+      <SelectionProvider>
+        <MapProvider>
+          <div className="relative size-full overflow-hidden">
+            <MapScene />
+            <MapChrome />
+          </div>
+        </MapProvider>
+      </SelectionProvider>
     </MapSettingsProvider>
   );
 }
