@@ -68,7 +68,20 @@ function probe(map: MapLibreMap, point: PointLike): BoundaryHover {
 const hoverKey = (hover: BoundaryHover) =>
   `${hover.parent ?? ''}|${hover.location?.psgc ?? ''}`
 
-const NO_HOVER_KEY = hoverKey(NO_HOVER)
+/**
+ * How long a reading has to hold still before the map acts on it.
+ *
+ * The archipelago is the reason. Sweeping a pointer across the Visayas crosses a
+ * dozen islands and the water between them in well under a second, and each
+ * crossing is a different parent to carve open — so the reveal opens and
+ * collapses a dozen times over a gesture that was only ever passing through.
+ * Settling costs a beat on the hovers the user meant and removes the ones they
+ * did not.
+ *
+ * Short enough to read as the map keeping up rather than as a delay: a hover
+ * held on purpose is held for far longer than this.
+ */
+const HOVER_SETTLE_MS = 90
 
 /**
  * Pointing at the map: hover explores, click decides, and a decision stops the
@@ -81,12 +94,19 @@ const NO_HOVER_KEY = hoverKey(NO_HOVER)
  * product's resolution* is lit inside it. Nothing is committed and nothing is
  * fetched; it is a preview of what a click would get you.
  *
+ * It follows the pointer where the pointer means it: a reading has to hold for
+ * HOVER_SETTLE_MS before the map takes it, so a sweep across a hundred small
+ * islands opens nothing and stopping on one opens that one. The hit test still
+ * runs on every move — the cursor is drawn from it directly — and it is only the
+ * *published* hover that waits.
+ *
  * A click gets you it. One click, wherever the pointer is over land — the child
  * fill is hit-testable across the whole country, so the province resolves
- * whether or not its region is the one currently opened up. Clicking open water
- * clears the selection; clicking land the finer tier does not cover is neither,
- * because there is nothing to resolve to and dropping the selection over a lake
- * would punish a near miss.
+ * whether or not its region is the one currently opened up. It pins the unit
+ * *and* the point, which is what overlays/LocationPopup plants its marker on.
+ * Clicking open water clears the selection; clicking land the finer tier does
+ * not cover is neither, because there is nothing to resolve to and dropping the
+ * selection over a lake would punish a near miss.
  *
  * From the moment a selection exists, the pointer is ignored: this hook reports
  * no hover at all until the pin goes. A selection that the next stray mousemove
@@ -105,24 +125,66 @@ const NO_HOVER_KEY = hoverKey(NO_HOVER)
  */
 export function useBoundaryFocus() {
   const map = useRawMap()
-  const { setHover, setPinned, pinned } = useSelection()
-  const lastHover = useRef(NO_HOVER_KEY)
+  const { setHover, setPinned, hover, pinned } = useSelection()
+  /** The reading a countdown is running towards, if one is. */
+  const pending = useRef<{ key: string; timer: number } | null>(null)
 
-  /** Publish a hover, skipping the moves that change nothing. */
-  const report = (hover: BoundaryHover) => {
-    const key = hoverKey(hover)
-    if (key === lastHover.current) return
-    lastHover.current = key
-    setHover(hover)
+  // `hover` and `pinned` are read straight from these closures rather than
+  // through a ref: useMapEvent re-points its handler on every render, so a
+  // handler always sees both as of the last commit. The published hover being
+  // state rather than a second copy of it is what keeps this honest when
+  // something *else* clears it — sources/AdminBoundaries does on a level change.
+  const publishedKey = hoverKey(hover)
+
+  const cancelPending = () => {
+    if (!pending.current) return
+    clearTimeout(pending.current.timer)
+    pending.current = null
   }
 
-  // `pinned` is read straight from these closures rather than through a ref:
-  // useMapEvent re-points its handler on every render, so a handler always sees
-  // the pin as of the last commit.
+  /**
+   * Publish a hover once the pointer has held it for HOVER_SETTLE_MS.
+   *
+   * Trailing, and on the reading rather than on the event: a reading that comes
+   * back to what is already on screen inside the window cancels itself and the
+   * map never moves, which is the flicker gone. A reading that merely *repeats*
+   * must not restart the clock, or a pointer moving 60 times a second would hold
+   * its own hover off indefinitely — so the countdown is reset by a change of
+   * target and by nothing else, and a sweep therefore commits nothing until it
+   * slows down.
+   */
+  const report = (next: BoundaryHover) => {
+    const key = hoverKey(next)
+
+    if (key === publishedKey) {
+      cancelPending()
+      return
+    }
+    if (pending.current?.key === key) return
+
+    cancelPending()
+    pending.current = {
+      key,
+      timer: window.setTimeout(() => {
+        pending.current = null
+        setHover(next)
+      }, HOVER_SETTLE_MS),
+    }
+  }
+
+  /**
+   * Publish now, dropping anything in flight: for the transitions the pointer
+   * does not own, where the delay would be a bug rather than a courtesy.
+   */
+  const reportNow = (next: BoundaryHover) => {
+    cancelPending()
+    if (hoverKey(next) === publishedKey) return
+    setHover(next)
+  }
 
   useMapEvent('mousemove', (event) => {
     if (!map) return
-    const hover = probe(map, event.point)
+    const probed = probe(map, event.point)
 
     // An inline cursor on the canvas overrides MapLibre's own, which is CSS on
     // the container — so it has to be dropped while the map is moving, or a pan
@@ -133,13 +195,19 @@ export function useBoundaryFocus() {
     //
     // Set before the pin check on purpose: a click is live whether or not one is
     // held, and `location` is exactly what a click resolves to in both states.
+    //
+    // Read off this move's own hit test rather than off the settled hover below,
+    // and so not delayed with it: the cursor's whole job is to say what a click
+    // would do *now*, and a click acts on a fresh probe of its own. It is also
+    // the one part of the hover the user is not going to see flicker, being
+    // drawn under their pointer at the spot they are already looking.
     map.getCanvas().style.cursor =
-      hover.location && !map.isMoving() ? 'pointer' : ''
+      probed.location && !map.isMoving() ? 'pointer' : ''
 
     // The freeze. Nothing downstream hears the pointer again until the pin goes.
     if (pinned) return
 
-    report(hover)
+    report(probed)
   })
 
   useMapEvent('click', (event) => {
@@ -154,19 +222,28 @@ export function useBoundaryFocus() {
     // `location=` is built from, and asking for a region would return the wrong
     // shape of answer.
     if (location) {
-      setPinned(location)
+      // `wrap()` because MapLibre renders copies of the world either side of the
+      // real one: a click on the Philippines drawn at +360 reports a longitude
+      // of ~481, which places a marker correctly and prints as nonsense.
+      // Normalising here rather than at the readout keeps one canonical pin,
+      // and the elastic pan limit means this only bites mid-drag anyway.
+      const { lng, lat } = event.lngLat.wrap()
+      setPinned({ ...location, lngLat: { lng, lat } })
       // Dropped in the same commit as the pin, so the frozen state is the empty
       // one: a hover left standing here would outrank the pin in
       // sources/AdminBoundaries and could never be corrected, the moves that
-      // would clear it being the ones the freeze discards.
-      report(NO_HOVER)
+      // would clear it being the ones the freeze discards. Immediate, and
+      // cancelling the settle in flight for the same reason — a countdown that
+      // survived the click would land a hover *after* the pin, on the far side
+      // of the freeze that was supposed to stop it.
+      reportNow(NO_HOVER)
       return
     }
 
     // Leaving the country entirely is what clears a selection. Inside a parent
     // but on none of its children is not a deselection: it is the gap between
-    // two provinces, or land under a product whose tier the server withholds at
-    // this zoom (see LEVEL_3_MIN_ZOOM).
+    // two provinces, or a sliver the child tier's generalized geometry gives up
+    // at this zoom.
     if (!parent) setPinned(null)
   })
 
@@ -174,6 +251,11 @@ export function useBoundaryFocus() {
   // which is a sibling of the map rather than a child of it, so the pointer
   // really has left. Which is the other half of what the pin is for: a panel
   // that has to keep showing a place reads `pinned`, not the hover.
+  //
+  // Settled like any other reading, not immediate: the panels float *over* the
+  // canvas, so a pointer crossing the map on its way somewhere clips their
+  // corners and leaves and re-enters within a frame or two. That is the island
+  // flicker again in a different currency, and the same window absorbs it.
   useMapEvent('mouseout', () => {
     if (map) map.getCanvas().style.cursor = ''
     report(NO_HOVER)
@@ -183,6 +265,10 @@ export function useBoundaryFocus() {
     if (!map) return
     return () => {
       map.getCanvas().style.cursor = ''
+      // A countdown must not outlive the map it was started over: it would fire
+      // into an unmounted tree, and its reading names a unit from a style that
+      // no longer exists.
+      cancelPending()
     }
   }, [map])
 }

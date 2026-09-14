@@ -95,6 +95,26 @@ export function tileUrl(
 }
 
 /**
+ * One named tile, for the times the app fetches a tile itself rather than
+ * handing MapLibre a template.
+ *
+ * There is exactly one such caller — utils/labelAnchors, which reads a single
+ * low-zoom tile to work out where each unit's name belongs — and it goes through
+ * here rather than building the URL inline so that repointing at staging stays
+ * one env var, as the note at the top of this file promises.
+ */
+export function tileUrlAt(
+  source: string,
+  tile: { z: number; x: number; y: number },
+  params?: Record<string, string | number>,
+): string {
+  return tileUrl(source, params)
+    .replace('{z}', String(tile.z))
+    .replace('{x}', String(tile.x))
+    .replace('{y}', String(tile.y))
+}
+
+/**
  * Glyph template for `style.glyphs`.
  *
  * `{fontstack}` and `{range}` are MapLibre placeholders and must not be encoded,

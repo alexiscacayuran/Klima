@@ -6,6 +6,7 @@ import {
   variableKey,
 } from '@/map/config/products'
 import type { AdminLocation } from '@/map/types/features'
+import type { LngLat } from '@/map/utils/coordinates'
 
 /**
  * What the map is showing, and which place it is showing it for.
@@ -22,13 +23,16 @@ import type { AdminLocation } from '@/map/types/features'
  *   outside it by anything that fetches: the tiles are the app's only source of
  *   location identity, so `location` below is what every `location=` parameter
  *   is built from (see AdminLocation).
+ * - `date` is written by the timeline, which is chrome, and read by the
+ *   selection popup, which is a child of <Map>. It moved in here the moment
+ *   something on the map read it, which is the rule this file has always
+ *   applied rather than an exception to it.
  *
- * Neither has a prop path between those two sides — the chrome is a sibling of
+ * None has a prop path between those two sides — the chrome is a sibling of
  * <Map>, not a child — which is the same reason MapSettingsContext exists.
  *
- * Deliberately *not* here: which product the accordion has expanded, and the
- * timeline month. Nothing outside the chrome reads them yet. They move in when
- * a layer consumes them, not before.
+ * Deliberately *not* here: which product the accordion has expanded. Nothing
+ * outside the chrome reads it yet. It moves in when something does, not before.
  */
 
 /** The pointer's reading of the boundary tiers, as one atomic update. */
@@ -51,6 +55,22 @@ export type BoundaryHover = {
 
 export const NO_HOVER: BoundaryHover = { parent: null, location: null }
 
+/**
+ * A pinned place, plus the point that pinned it.
+ *
+ * The coordinate is the click's own, not the unit's centroid, because it is the
+ * only part of the selection the boundaries cannot say afterwards: the polygon
+ * is on the map already, and where inside it the user pointed is not. It is
+ * what the marker is planted at and what the popup reports.
+ *
+ * Widening AdminLocation rather than wrapping it keeps every existing reader —
+ * `enclosingParent(pinned)`, `pinned.psgc`, the `location` field below — working
+ * unchanged, since a pin still *is* a location.
+ */
+export type PinnedLocation = AdminLocation & {
+  lngLat: LngLat
+}
+
 export type MapSelection = {
   /** Composite key of the layer the map paints; see `variableKey`. */
   variable: string | null
@@ -72,11 +92,31 @@ export type MapSelection = {
    * API is rate-limited per IP (docs/cis-api.md §1) — so a request keys on this
    * and falls back to the hover for the transient readout.
    */
-  pinned: AdminLocation | null
-  setPinned: (location: AdminLocation | null) => void
+  pinned: PinnedLocation | null
+  setPinned: (location: PinnedLocation | null) => void
 
   /** The place the app is currently about: the pin, else what is under the pointer. */
   location: AdminLocation | null
+
+  /**
+   * The step the timeline is scrubbed to, as the id the selected product's own
+   * `date` parameter takes: `YYYY-MM` for the monthly products (seasonal,
+   * drought), `YYYY-MM-DD` for the daily ones (five-day, daily monitoring).
+   * See docs/cis-api.md §6.
+   *
+   * Kept as that id rather than as a Date, so it stays the value a request is
+   * built from without a conversion that would have to know the granularity;
+   * spelling it for a reader is formatStepId's job, and it reads the
+   * granularity back off the id.
+   *
+   * Null until the product catalogue resolves, and again whenever the selected
+   * product publishes no dates — there is no honest default before then. A
+   * window guessed from today's date would look exactly like a real one while
+   * pointing at months CIS has published nothing for. useTimeline owns filling
+   * it in and keeping it inside the window.
+   */
+  date: string | null
+  setDate: (stepId: string | null) => void
 }
 
 /** The layer the map opens on, as one key. */
@@ -98,4 +138,6 @@ export const SelectionContext = createContext<MapSelection>({
   pinned: null,
   setPinned: () => {},
   location: null,
+  date: null,
+  setDate: () => {},
 })

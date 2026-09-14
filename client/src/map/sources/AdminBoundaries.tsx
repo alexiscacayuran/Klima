@@ -13,6 +13,16 @@ import {
   tileUrl,
 } from "@/map/config/martin";
 import { spatialLevelForVariable } from "@/map/config/products";
+import {
+  ADMIN_TIERS,
+  LABEL_FONT,
+  LABEL_HALO,
+  LABEL_HALO_BLUR,
+  LABEL_HALO_WIDTH,
+  adminTextSize,
+  tierForAdminLevel,
+} from "@/map/config/labelTiers";
+import { useLabelAnchors } from "@/map/hooks/useLabelAnchors";
 import { useRawMap } from "@/map/hooks/useMapInstance";
 import { useBoundaryFocus } from "@/map/interactions/useBoundaryFocus";
 import { NO_HOVER } from "@/map/state/selectionContext";
@@ -49,6 +59,19 @@ type VectorSourceWithEncoding = VectorSourceSpecification & {
  * with getComputedStyle and repainting on every theme change.
  */
 const BOUNDARY_INK = "#ffffff";
+
+/**
+ * Where everything that draws data inserts itself: under the label tier.
+ *
+ * A fixed seam in the style rather than a mount-order convention, so a raster
+ * overlay added later cannot land on top of the place names by virtue of its
+ * component mounting after this one. Above the seam sit the basemap's own place
+ * labels and then, above those, the administrative names at the bottom of this
+ * file — which deliberately pass no beforeId, and that is what keeps them last.
+ * See utils/basemapStyle for the seam itself and LAYER_ORDER in layers/index
+ * for the bands either side of it.
+ */
+const BELOW_LABELS = LAYER_IDS.labelAnchor;
 
 const source = (level: AdminLevel): VectorSourceWithEncoding => ({
   type: "vector",
@@ -91,7 +114,10 @@ const source = (level: AdminLevel): VectorSourceWithEncoding => ({
  * when the levels do — only the tile URLs do, and react-maplibre turns that into
  * a `setTiles()` call rather than a source teardown.
  *
- * Level 3 is served empty below z8 by design; see LEVEL_3_MIN_ZOOM.
+ * Every level is served at every zoom. Level 3 used to be withheld below z8 —
+ * 1642 polygons in one low-zoom tile — and Martin now generalizes them instead,
+ * which is what lets a level-3 product be drawn and labelled at national zoom
+ * rather than only after the user has zoomed in far enough to earn it.
  */
 export function AdminBoundaries() {
   const { showBoundaries } = useMapSettings();
@@ -103,6 +129,15 @@ export function AdminBoundaries() {
   // between two layers of one product — which are the same provinces.
   const spatialLevel = spatialLevelForVariable(variable);
   const levels = useMemo(() => boundaryLevels(spatialLevel), [spatialLevel]);
+
+  // Keyed on the product's own resolution rather than on either tier: the
+  // labels name the units the data is published for, which is the child tier
+  // when there is one and the parent tier when there is not.
+  const labelAnchors = useLabelAnchors(spatialLevel);
+  // Region, province or city/municipality — the same ladder the basemap's own
+  // place names are on, so a level-3 product's labels sit below a province's
+  // rather than shouting at the same size. See config/labelTiers.
+  const labelTier = tierForAdminLevel(spatialLevel);
 
   useBoundaryFocus();
   useResetOnLevelChange(levels);
@@ -141,6 +176,7 @@ export function AdminBoundaries() {
           id={LAYER_IDS.boundariesParentFill}
           type="fill"
           source-layer={BOUNDARIES_SOURCE_LAYER}
+          beforeId={BELOW_LABELS}
           layout={{ visibility: showBoundaries ? "visible" : "none" }}
           paint={{
             "fill-color": BOUNDARY_INK,
@@ -156,6 +192,7 @@ export function AdminBoundaries() {
           id={LAYER_IDS.boundariesParentLine}
           type="line"
           source-layer={BOUNDARIES_SOURCE_LAYER}
+          beforeId={BELOW_LABELS}
           layout={{
             visibility: showBoundaries ? "visible" : "none",
             "line-join": "round",
@@ -221,6 +258,7 @@ export function AdminBoundaries() {
             id={LAYER_IDS.boundariesChildFill}
             type="fill"
             source-layer={BOUNDARIES_SOURCE_LAYER}
+            beforeId={BELOW_LABELS}
             layout={{ visibility: showBoundaries ? "visible" : "none" }}
             paint={{
               "fill-color": BOUNDARY_INK,
@@ -240,6 +278,7 @@ export function AdminBoundaries() {
             id={LAYER_IDS.boundariesChildLine}
             type="line"
             source-layer={BOUNDARIES_SOURCE_LAYER}
+            beforeId={BELOW_LABELS}
             layout={{
               visibility: showBoundaries ? "visible" : "none",
               "line-join": "round",
@@ -269,6 +308,109 @@ export function AdminBoundaries() {
           />
         </Source>
       )}
+
+      {/*
+        Every unit's name, at the resolution the product publishes for, all the
+        time.
+
+        Its own source, and a point one, because the boundary tiles cannot carry
+        this. MapLibre labels a polygon once per *outer ring* — so against the
+        live tiles the 86 provinces ask for 553 labels, 116 of them "Palawan",
+        one per islet, and collision detection then keeps whichever handful fits.
+        That is the repeated names, and no styling reaches it: a symbol layer
+        labels a feature once only when the feature is a point. utils/labelAnchors
+        derives those points, one per unit, on the unit's largest island.
+
+        Unfiltered, unlike every other layer here. The names are not part of the
+        drill-down — a place is called what it is called whether or not the
+        pointer is near it — so the carve applies to ink and not to labels, and
+        what thins them at low zoom is collision, which is a cartographer's
+        answer rather than a state machine's.
+
+        No beforeId, so this appends above both the seam and the basemap's own
+        place labels — the last thing MapLibre draws, and the first thing it
+        places, which is what keeps a province name from being dropped in favour
+        of a town's. See LAYER_ORDER in layers/index.
+      */}
+      <Source id={SOURCE_IDS.boundaryLabels} type="geojson" data={labelAnchors}>
+        <Layer
+          id={LAYER_IDS.boundariesLabel}
+          type="symbol"
+          layout={{
+            visibility: showBoundaries ? "visible" : "none",
+            "text-field": ["get", "name"],
+            "text-font": LABEL_FONT,
+            // Names wrap rather than run: "Davao de Oro" across a province is a
+            // banner, and two short lines sit inside a shape where one long one
+            // overhangs into the sea.
+            "text-max-width": 8,
+            "text-size": adminTextSize(labelTier),
+            "text-padding": 20,
+            // Who gets the space when two names want it — and at national zoom
+            // most of them do, because 86 provinces will not fit, let alone 1641
+            // municipalities, and MapLibre has to drop some. The unit under the
+            // pointer, and the one holding the selection, must never be among the
+            // dropped. Lower sorts first, and first placed keeps its spot.
+            //
+            // Then cities before municipalities, but only at level 3. That tier
+            // is 149 cities among 1492 municipalities, and when two names
+            // collide the city is the one more likely to be the thing a reader
+            // was looking for — it is larger, and it is how people describe
+            // where they are.
+            //
+            // `geo_level` rather than the level the tile was fetched at: the two
+            // are different questions, and this one asks what the unit *is* (see
+            // AdminBoundaryProperties). Which is also why the rule is confined to
+            // level 3. Level 2 carries the same "City" value on exactly two rows
+            // — City of Davao and City of Isabela, promoted out of level 3 — and
+            // ranking those above all 83 provinces would hand the country's
+            // label space to two of its smaller units.
+            //
+            // The gate is a plain boolean inside the expression rather than two
+            // expressions chosen in TypeScript: `["all", false, …]` can never
+            // match, so every unit falls through to the last rung and the
+            // ordering is exactly what it was before this rule existed.
+            "symbol-sort-key": [
+              "case",
+              ["==", ["get", "psgc"], pinnedPsgc],
+              0,
+              ["==", ["get", "psgc"], hoveredPsgc],
+              1,
+              ["all", spatialLevel === 3, ["==", ["get", "geo_level"], "City"]],
+              2,
+              3,
+            ],
+          }}
+          paint={{
+            // The tier's own ink, not BOUNDARY_INK: the boundary lines say
+            // "this is an edge" in one colour at every level, but a name says
+            // which level it belongs to, and colour is half of how.
+            "text-color": ADMIN_TIERS[labelTier].color,
+            // One rung, where the fill has three: the fill already says which
+            // unit is which, and a name that changed weight under the pointer
+            // would be a second voice saying it. This only keeps the rest from
+            // competing with the one in play.
+            //
+            // Opacity rather than size, deliberately: text-size is a layout
+            // property, so making it depend on the hover would re-lay out the
+            // whole bucket on every pointer move. text-opacity is paint, and
+            // costs a uniform.
+            "text-opacity": [
+              "case",
+              [
+                "any",
+                ["==", ["get", "psgc"], pinnedPsgc],
+                ["==", ["get", "psgc"], hoveredPsgc],
+              ],
+              1,
+              0.8,
+            ],
+            "text-halo-color": LABEL_HALO,
+            "text-halo-width": LABEL_HALO_WIDTH,
+            "text-halo-blur": LABEL_HALO_BLUR,
+          }}
+        />
+      </Source>
     </>
   );
 }

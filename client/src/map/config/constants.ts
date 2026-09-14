@@ -36,6 +36,15 @@ export const SOURCE_IDS = {
    * tier climate data joins to, since it is the tier the API publishes at.
    */
   boundariesChild: 'boundaries-child',
+  /**
+   * Label anchors — one point per unit at the product's own resolution.
+   *
+   * A third source, and not a vector one, because the boundary tiles cannot
+   * answer this question: MapLibre labels a polygon once per outer ring, so
+   * asking them for names yields 553 labels for 86 provinces. See
+   * utils/labelAnchors, which derives the points this carries.
+   */
+  boundaryLabels: 'boundary-labels',
 } as const
 
 export const LAYER_IDS = {
@@ -43,6 +52,20 @@ export const LAYER_IDS = {
   boundariesParentLine: 'boundaries-parent-line',
   boundariesChildFill: 'boundaries-child-fill',
   boundariesChildLine: 'boundaries-child-line',
+  /**
+   * The names of the units the selected product publishes for. One layer, not
+   * one per tier: the labels name the resolution the data is at, which is the
+   * child tier when there is one and the parent tier otherwise.
+   */
+  boundariesLabel: 'boundaries-label',
+  /**
+   * Not a layer anything draws: the seam between the map's data and its labels.
+   *
+   * Added to the style itself rather than mounted as a component — it has to
+   * exist before the first <Layer> is created, and it belongs to the basemap's
+   * shape rather than to any source. See utils/basemapStyle.
+   */
+  labelAnchor: 'klima-label-anchor',
 } as const
 
 /**

@@ -1,26 +1,32 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { TimelineStep } from "@/map/config/timeline";
 import { cn } from "@/lib/utils";
-
-export type TimelineStep = {
-  /** Stable id — the value the caller stores and the API is queried with. */
-  id: string;
-  /** Short label under the tick ("Oct"). */
-  label: string;
-};
 
 type TimelineBarProps = {
   /**
-   * The months in the window, in order. Must be referentially stable across
-   * renders (a module constant or a useMemo) — it is a dependency of the
-   * playback timer, and a fresh array every render restarts it.
+   * The window, in the order it should be printed — which is not always
+   * chronological: a monitoring product runs from its newest observation
+   * backwards. This component lays out whatever order it is given and does not
+   * sort, because the order is a property of the product (see
+   * config/timeline.ts PRODUCT_TIMELINES).
+   *
+   * Must be referentially stable across renders (a module constant or a
+   * useMemo) — it is a dependency of the playback timer, and a fresh array
+   * every render restarts it.
    */
   steps: readonly TimelineStep[];
-  /** Id of the selected step. */
-  value: string;
+  /** Id of the selected step; null before the window has resolved. */
+  value: string | null;
   onChange: (stepId: string) => void;
-  /** How long each month is held while playing. */
+  /**
+   * What to say when there are no steps. The bar keeps its box either way —
+   * the chrome is absolutely positioned and a disappearing panel would shift
+   * nothing but would leave the map looking like it had lost a control.
+   */
+  placeholder?: string;
+  /** How long each step is held while playing. */
   stepDurationMs?: number;
   className?: string;
 };
@@ -36,31 +42,39 @@ type TimelineBarProps = {
 const RAIL_INSET = 8;
 
 /**
- * Scrubber for the forecast window under the map.
+ * Scrubber for the selected product's window under the map.
  *
- * The ticks are buttons, not a range input: they are six labelled months, not a
- * continuous scale, and a native slider would announce "2 of 6" instead of
- * "October". `aria-current` marks the painted month, which is what a screen
- * reader user needs to hear on arrival.
+ * The ticks are buttons, not a range input: they are a handful of labelled
+ * dates, not a continuous scale, and a native slider would announce "2 of 6"
+ * instead of "October 2026". `aria-current` marks the painted step, which is
+ * what a screen reader user needs to hear on arrival, and each tick carries its
+ * date in full as its accessible name — the visible label abbreviates, and
+ * prints the year only where it changes, which is unambiguous next to its
+ * neighbours but not to someone landing on one tick alone.
  *
- * Playback walks to the last month and stops, deliberately — the CIS motion
+ * Playback walks to the last step and stops, deliberately — the CIS motion
  * rules forbid infinite loops on content, and a map that quietly restarts is a
  * map you cannot read a value off. Pressing play at the end replays from the
  * start.
  *
- * The selected month is the caller's state, so playback drives the same value
+ * The selected step is the caller's state, so playback drives the same value
  * a click does and the map has one source of truth.
  *
- * Geometrically it is a scale, not a row of columns: the months are anchored to
+ * Geometrically it is a scale, not a row of columns: the steps are anchored to
  * the ends of the track and spaced between, which is why they are absolutely
  * positioned rather than laid out in a grid. The track is thick enough to hold
- * the ticks, and the months behind the playhead are dropped — the fill has
+ * the ticks, and the steps behind the playhead are dropped — the fill has
  * taken that stretch and says where playback has reached.
+ *
+ * "Forward" here means along the array, not forward in time. A product whose
+ * window runs from its newest observation backwards plays into the past, which
+ * is the direction its own data reads in.
  */
 export function TimelineBar({
   steps,
   value,
   onChange,
+  placeholder = "No dates available",
   stepDurationMs = 1200,
   className,
 }: TimelineBarProps) {
@@ -68,13 +82,17 @@ export function TimelineBar({
 
   // Held in a ref so an inline arrow function from the caller does not count as
   // a timer dependency; otherwise every parent render would cancel and restart
-  // the current month's dwell, and playback would stall.
+  // the current step's dwell, and playback would stall.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
   const activeIndex = steps.findIndex((step) => step.id === value);
   const lastIndex = steps.length - 1;
   const isLast = activeIndex === lastIndex;
+  // No window to scrub: the catalogue has not landed, the API is unreachable,
+  // or CIS publishes no dates for the selected bulletin. The caller's
+  // placeholder says which.
+  const isEmpty = steps.length === 0;
 
   useEffect(() => {
     if (!playing) return;
@@ -95,7 +113,7 @@ export function TimelineBar({
 
   // Tick n's centre, as a percentage of the rail. Edge-anchored — n / (count-1)
   // rather than the (n + 0.5) / count a column layout gives — so the first and
-  // last months land on the ends of the track instead of floating in from them.
+  // last steps land on the ends of the track instead of floating in from them.
   const positionOf = (index: number) =>
     lastIndex <= 0 ? 0 : (index / lastIndex) * 100;
 
@@ -121,12 +139,18 @@ export function TimelineBar({
     >
       <Button
         onClick={togglePlay}
+        disabled={isEmpty}
         aria-label={
           playing ? "Pause the forecast sequence" : "Play the forecast sequence"
         }
         className={cn(
           "size-10 shrink-0 rounded-full bg-brand text-white shadow-glint",
           "hover:bg-brand-strong focus-visible:ring-brand-medium",
+          // Kept in the layout rather than hidden while there is nothing to
+          // play: the bar's proportions are what make it recognisable as a
+          // scrubber, and a control that vanishes and returns reads as a
+          // glitch where a dimmed one reads as "not yet".
+          "disabled:pointer-events-none disabled:opacity-40 disabled:shadow-none",
         )}
       >
         {/* Nudged off-centre: a triangle's optical centre sits left of its
@@ -148,6 +172,19 @@ export function TimelineBar({
           style={{ width: fillWidth }}
         />
 
+        {/* The empty track stays under it, so what is missing reads as dates
+            rather than as the whole control. `role="status"` because this text
+            replaces itself as the catalogue resolves — a screen reader user who
+            has already passed the bar should hear that it filled in. */}
+        {isEmpty && (
+          <p
+            role="status"
+            className="absolute inset-x-0 top-0 font-cis-mono text-xs/4 text-fg-subtle"
+          >
+            {placeholder}
+          </p>
+        )}
+
         {/* The rail: the track minus a cap at each end. Ticks are positioned
             against this box, so 0% and 100% are the ends of the *track*. */}
         <div
@@ -156,7 +193,7 @@ export function TimelineBar({
         >
           {steps.map((step, index) => {
             const isActive = index === activeIndex;
-            // Months already stepped past are not drawn. The fill has taken
+            // Steps already stepped past are not drawn. The fill has taken
             // that stretch of track, and a tick sitting on it would only ask
             // to be read as a second, contradictory position marker.
             const isPast = activeIndex !== -1 && index < activeIndex;
@@ -164,6 +201,11 @@ export function TimelineBar({
               <button
                 key={step.id}
                 type="button"
+                // The full date, not the tick's own text: the label abbreviates
+                // and prints the year only where it changes, which reads
+                // correctly along the rail but leaves a screen reader landing
+                // on a bare "Nov" with no year and no month for a bare "8".
+                aria-label={step.fullLabel}
                 aria-current={isActive ? "true" : undefined}
                 onClick={() => {
                   setPlaying(false);

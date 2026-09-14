@@ -4,21 +4,19 @@ import { Map, MapProvider } from "@vis.gl/react-maplibre";
 
 import { TimelineBar } from "./controls/TimelineBar";
 import { TitleSearchBar } from "./controls/TitleSearchBar";
+import { LocationPopup } from "./overlays/LocationPopup";
 import { ProductAccordion } from "./panels/ProductAccordion";
 import { AdminBoundaries } from "./sources/AdminBoundaries";
 import { useBasemapStyle } from "./hooks/useBasemapStyle";
+import { useTimeline } from "./hooks/useTimeline";
+import type { TimelineState } from "./hooks/useTimeline";
 import { useElasticBounds } from "./interactions/useElasticBounds";
 import { MapSettingsProvider } from "./state/MapSettingsProvider";
 import { SelectionProvider } from "./state/SelectionProvider";
 import { useMapSettings } from "./state/useMapSettings";
 import { useSelection } from "./state/useSelection";
 import { INTERACTIVE_LAYER_IDS, MAP_ID } from "./config/constants";
-import {
-  DEFAULT_MONTH_ID,
-  DEFAULT_PRODUCT_ID,
-  SEASONAL_OUTLOOK_MONTHS,
-  variableKey,
-} from "./config/products";
+import { DEFAULT_PRODUCT_ID, variableKey } from "./config/products";
 import {
   FIT_BOUNDS_OPTIONS,
   PHILIPPINES_BOUNDS,
@@ -86,9 +84,30 @@ function MapScene() {
       style={{ width: "100%", height: "100%" }}
     >
       <DataLayers />
+      {/* Not in DataLayers: the marker and popup are DOM over the canvas, not
+          style layers, so they have no place in LAYER_ORDER. They do have to be
+          inside <Map>, which is how they reach the instance. */}
+      <LocationPopup />
     </Map>
   );
 }
+
+/**
+ * What the timeline says when it has no dates on it.
+ *
+ * Three different facts, and the difference matters to whoever is looking: one
+ * is transient, one is an outage somebody has to fix, and one is simply how far
+ * CIS has got with that bulletin. Collapsing them into a single "no data" would
+ * make a broken API indistinguishable from a product that was never loaded.
+ * `ready` is unreachable here — the bar only shows a placeholder when it is
+ * empty — but it is spelled out so the map stays exhaustive over the union.
+ */
+const TIMELINE_PLACEHOLDER: Record<TimelineState["status"], string> = {
+  loading: "Loading dates…",
+  error: "Dates unavailable",
+  none: "No dates published for this product",
+  ready: "",
+};
 
 /**
  * The chrome floating over the map: product rail, title/search bar, timeline.
@@ -98,19 +117,25 @@ function MapScene() {
  * administrative tiers AdminBoundaries draws, and that component is inside
  * <Map> with no prop path to this one.
  *
- * Which product is *expanded* and which month is scrubbed to stay local. They
- * change nothing outside this box yet, and they follow the selected layer in
- * when something on the map reads them.
+ * The scrubbed date has followed it in, for the same reason one step later:
+ * the selection popup is a child of <Map> and reports the date, so the timeline
+ * and the popup have to be reading one value. Which product is *expanded* is
+ * still local — nothing outside this box reads it.
+ *
+ * The dates themselves are not state here at all. They are derived, by
+ * useTimeline, from the selected product and the freshness field CIS publishes
+ * for it, so the window moves when PAGASA issues a bulletin rather than when
+ * someone edits this repo.
  *
  * Absolute positioning with a pointer-events-none parent so the gaps between
  * panels stay draggable map. Each panel opts its own box back in.
  */
 function MapChrome() {
-  const { variable, setVariable } = useSelection();
+  const { variable, setVariable, date, setDate } = useSelection();
+  const { steps, status } = useTimeline();
   const [openProductId, setOpenProductId] = useState<string | null>(
     DEFAULT_PRODUCT_ID,
   );
-  const [month, setMonth] = useState<string>(DEFAULT_MONTH_ID);
   const [query, setQuery] = useState("");
 
   return (
@@ -141,9 +166,10 @@ function MapChrome() {
           one composition rather than two unrelated widths. */}
       <TimelineBar
         className="absolute inset-x-6 bottom-6 mx-auto max-w-[600px]"
-        steps={SEASONAL_OUTLOOK_MONTHS}
-        value={month}
-        onChange={setMonth}
+        steps={steps}
+        value={date}
+        onChange={setDate}
+        placeholder={TIMELINE_PLACEHOLDER[status]}
       />
     </div>
   );

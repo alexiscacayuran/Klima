@@ -79,9 +79,21 @@ Two layers, and the nginx one is the tighter of the two for a map.
 Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and
 `RateLimit-Reset`. Over budget is `429` with `{ "message": … }`.
 
+**One bucket, all routes.** The express limiter keys on the authenticated
+identity, so every request the account makes — any product, plus `/stations` and
+`/products` — draws down the *same* 100. This is newly true: those last two were
+unauthenticated and therefore keyed by IP, which gave them a separate bucket of
+their own. Budget the whole session, not each product.
+
 **A per-region fan-out is 18 requests** (see §3). At the `apiuser` ceiling that
 is five full national refreshes per 15 minutes — enough, but not enough to fan
 out on every pan. Fetch nationally once, cache, and filter client-side.
+
+**The station layer no longer fits an `apiuser` token.** Building it is 1 + N =
+109 requests (see §5), which alone exceeds 100 and now leaves nothing for the
+data. Either use the `superuser` token — the account the rate limiter is
+explicitly shaped for, at 10 000 per 15 min — or build the station GeoJSON once
+and cache it, which is the standing advice in §5 regardless.
 
 ---
 
@@ -96,34 +108,106 @@ Authorization: Bearer <token>
 or a `token` cookie. The cookie is set by the admin login flow and is not
 Klima's path — use the header.
 
-| Endpoint group | Auth |
-|---|---|
-| `/drought/*` | **required** — `apiuser` or `superuser` |
-| `/fiveday` | **required** — `apiuser` or `superuser` |
-| `/seasonal/*` | none |
-| `/daily-monitoring/*` (GETs) | none |
-| `/stations/*` | none |
-| `/products` | none |
+Every product and reference `GET` under `/api/v1` requires one. The exceptions
+are `/api/v1/health`, the `/api/v1/admin/*` login flow, and `/api/v1/user` —
+which takes no middleware but looks the caller up *by* their token, so it is
+self-gating (see below).
 
-The gap is not intentional design Klima should rely on; assume every product
-endpoint may become authenticated and put the token on all of them.
+| Endpoint group | Auth | Product-scoped |
+|---|---|---|
+| `/drought/*` | **required** — `apiuser` or `superuser` | yes — `drought` |
+| `/fiveday` | **required** — `apiuser` or `superuser` | yes — `fiveday` |
+| `/seasonal/*` | **required** — `apiuser` or `superuser` | yes — `seasonal` |
+| `/daily-monitoring/*` (GETs) | **required** — `apiuser` or `superuser` | yes — `daily-monitoring` |
+| `/stations/*` | **required** — `apiuser` or `superuser` | **no** |
+| `/products` | **required** — `apiuser` or `superuser` | **no** |
 
-**Product scoping.** The middleware takes the last path segment of the router
-mount — `drought`, `fiveday` — and requires the token's product list to contain
-it. A `superuser` bypasses the check. So a token minted for `["drought"]`
-gets `403 {"message":"Product access forbidden"}` on `/fiveday`.
+The last four rows used to answer unauthenticated. That gap is closed — this doc
+previously said not to rely on it, and Klima put the header on every request
+rather than product by product, so nothing in the client needs rewiring. A
+deployment that never set a token, however, now gets `401` everywhere instead of
+a partially working map.
+
+**Product scoping.** For the product routes the middleware takes the last path
+segment of the router mount — `drought`, `fiveday`, `seasonal`,
+`daily-monitoring` — and requires the token's product list to contain it. A
+`superuser` bypasses the check. So a token minted for `["drought"]` gets
+`403 {"message":"Product access forbidden"}` on `/fiveday`, and now on
+`/seasonal` and `/daily-monitoring` too.
+
+**`/stations/*` and `/products` sit outside that scheme deliberately.** Their
+mount segments are not product names, so they authenticate the caller and stop
+there — no entitlement check. Any active `apiuser` reads them whatever its token
+grants, which is what makes them usable as shared reference data: station
+metadata and the catalogue are needed to interpret *any* product. Verified: a
+`["drought"]` token gets all 108 stations and all four catalogue entries, not a
+subset. **Neither endpoint is filtered to the token's entitlements**, so
+`/products` is a catalogue of what CIS publishes, not of what the caller may
+read — do not drive a product picker off it without intersecting against what
+the token actually opens.
+
+### `GET /api/v1/user` — what this token may read
+
+The intersection source for the caveat above, and the one endpoint that answers
+"who am I". It carries no auth middleware; it looks the caller up *by* the token
+they sent, so a request without one is `404`, not `401`.
+
+```json
+{ "id": "7142f105-…", "username": "Jay", "email": "…",
+  "expiresIn": "2027-04-22", "isActive": true, "products": ["drought"] }
+```
+
+`products` is the entitlement list the scoping above checks against, so
+intersecting it with `/products` gives exactly the set of products this
+deployment can actually fetch — the right input for a product picker, and
+cheaper than discovering the boundary through `403`s. `expiresIn` is the token's
+own expiry, worth surfacing before it strands a deployment.
+
+Two limits. It sits outside `/api/v1/<product>`, so it is **not** covered by the
+express limiter — no `RateLimit-*` headers, nginx's 10 r/s is the only ceiling.
+
+More importantly, **it is a database lookup, not a token check.** It matches the
+stored copy of the token and never verifies the JWT, so it checks neither
+signature nor expiry, and does not gate on `isActive` — it reports that as a
+field instead. A token that is expired or belongs to a deactivated user still
+answers `200` here while returning `401`/`403` on every product route. Read it
+for *what a token grants*, never as a health check for whether it still works;
+`isActive` and `expiresIn` are yours to inspect. `expiresIn` is also nullable —
+the bridge `superuser` has none.
 
 **Token handling.** A `VITE_`-prefixed token is baked into the bundle and served
-to anyone who loads the page. If the deployment fronts the API with the nginx in
-[nginx.conf.template](../client/nginx.conf.template), inject it there instead and
-keep it out of the client entirely:
+to anyone who loads the page, so Klima injects the header at its proxies instead
+and keeps it out of the client. One variable, `CIS_API_TOKEN`, read by whichever
+proxy is in front:
+
+| Mode | Where it is read | File |
+|---|---|---|
+| dev | the Vite process, added to each proxied request | [vite.config.ts](../client/vite.config.ts) |
+| build | nginx, at container start | [nginx.conf.template](../client/nginx.conf.template) |
+
+Both leave the header off entirely when it is unset, so the failure is
+`401 Not authenticated` — "nobody configured a token" — rather than
+`Invalid or expired token`, which would send whoever debugs it hunting for a
+token that was never there. The nginx side falls back to whatever the browser
+sent, which is what keeps `VITE_API_TOKEN` working for a deployment that has no
+proxy of its own:
 
 ```nginx
 location /api/ {
-    proxy_set_header Authorization "Bearer ${CIS_API_TOKEN}";
+    set $cis_token         "${CIS_API_TOKEN}";
+    set $cis_authorization $http_authorization;
+    if ($cis_token != "") {
+        set $cis_authorization "Bearer $cis_token";
+    }
+    proxy_set_header Authorization $cis_authorization;
     proxy_pass ${API_UPSTREAM};
 }
 ```
+
+A bare `proxy_set_header Authorization "Bearer ${CIS_API_TOKEN}"` is the trap
+here: with the variable unset it sends the literal `Bearer `, which is a
+malformed token rather than no token, and it strips the client's own header on
+the way past.
 
 Failure shapes: `401 {"message":"Not authenticated"}` (no token),
 `401 {"message":"Invalid or expired token"}`, `403 {"message":"Forbidden"}`.
@@ -234,20 +318,72 @@ compute a national statistic from one issuance without checking the count.
 Paths are relative to the base URL. All are `GET`; the `POST` routes are
 admin-only import triggers and are not Klima's concern.
 
-### `/products`
+### `/products` · auth required, not product-scoped
 
-The catalogue, and the only place `nextUpdateAt` is published — use it to decide
-when a cached layer is stale rather than polling.
+The catalogue, and the only place the two freshness fields are published —
+`nextUpdateAt` (when CIS expects the next issuance) and `latestData` (what the
+newest issuance actually covers). Between them they answer "is my cached layer
+stale" without probing a data endpoint.
 
 ```json
 [{ "id": 3, "name": "drought", "origin": "CLIMPS",
    "description": "Provincial monthly drought assessment and outlook",
    "nextUpdateAt": "2026-08-19T16:00:00.000Z",
+   "latestData": "2026-07-01",
    "createdAt": "…", "updatedAt": "2026-07-21T10:06:14.494Z" }]
 ```
 
 Product names are the strings the auth middleware scopes on: `drought`,
-`fiveday`, `daily-monitoring`, `seasonal`.
+`fiveday`, `daily-monitoring`, `seasonal`. They are also the mount segments the
+scoping is read from, which is why this endpoint and `/stations` — whose
+segments name no product — are authenticated but unscoped (§2).
+
+The list is the full catalogue, **not** filtered to the token's products, so a
+`["drought"]` token sees all four. Reading it as "what I may fetch" will produce
+`403 Product access forbidden` on the other three.
+
+#### `latestData`
+
+The **initial date of the product's latest issuance** — a `YYYY-MM-DD` string,
+not an ISO timestamp like the other date fields, and `null` for a product with no
+data loaded. An issuance is *about* its earliest date, so what that date means
+follows each product's own granularity:
+
+| Product | `latestData` | Is |
+|---|---|---|
+| `drought` | `2026-07-01` | The **assessment** month of the newest issuance. The six outlook months follow it |
+| `seasonal` | `2026-09-01` | The **first forecast month** of the newest issuance |
+| `fiveday` | `2026-09-07` | The **earliest day** of the newest block — usually day one, but see the caveat below |
+| `daily-monitoring` | `2026-08-09` | The **observed day**. Each issuance carries exactly one, so first and last are the same date |
+
+**Slice it to the granularity the endpoint speaks.** Drought and seasonal
+identify months as `YYYY-MM` in their own responses and `date` params, so
+`latestData.slice(0, 7)` is what matches — `2026-07-01` is the first of the
+month, not a day with its own data. Five-day and daily monitoring use the full
+`YYYY-MM-DD`.
+
+**Five-day carries a caveat.** An issuance is normally five days starting on the
+issuance date, but 18 of 63 recorded issuances also carry a *leading* day — the
+day before, published for a subset of provinces only. The 2026-09-01 issuance
+spans 08-31 → 09-05, where 08-31 holds 32 of 86 provinces and 09-01 holds all 86.
+`latestData` is the span's earliest date, so on those issuances it reports that
+partial day rather than the full one. Do not derive the block's end from it
+(`latestData + 4` is wrong roughly a third of the time), and expect a date picker
+opened on it to show thin coverage — this is the same per-issuance coverage
+variance described in §4, surfacing in the freshness field.
+
+Two things this replaces:
+
+- **The lag probe.** `nextUpdateAt` is a *schedule* and drifts past when an
+  import fails or a source file never lands; `latestData` is what is loaded. The
+  daily-monitoring lag described below is readable here directly, so a client no
+  longer has to fetch a data endpoint to learn how far back "latest" is.
+- **The default-date guess.** Every endpoint that resolves an omitted `date` to
+  "latest" resolves it to this issuance, so `latestData` is the value a date
+  picker should open on and the upper bound it should clamp to.
+
+The field is derived, not stored — computed per request from the newest
+`issuedAt` per product, so it cannot drift out of sync with the data.
 
 ---
 
@@ -347,7 +483,7 @@ substring matching (`/thunderstorm/i`, `/rains/i`) and keep a fallback.
 
 ---
 
-### Seasonal forecast — `/seasonal/*`
+### Seasonal forecast — `/seasonal/*` · auth required
 
 Monthly, six months ahead. Two resolutions from the same issuance.
 
@@ -406,13 +542,16 @@ Note the shape change: `/seasonal/station` returns **one object**, while
 
 ---
 
-### Daily monitoring — `/daily-monitoring/*`
+### Daily monitoring — `/daily-monitoring/*` · auth required
 
 Station observations, not gridded. Renders as points, not a choropleth.
 
 Data lags: `date` must be strictly before today in Manila, or `404 No daily
 monitoring data available.` Omit `date` for the latest available day, which at
-time of writing trailed by roughly three weeks — do not assume yesterday.
+time of writing trailed by roughly three weeks — do not assume yesterday. The
+size of that lag is not something to hard-code or discover by probing: read
+this product's `latestData` from `/products` above and clamp the date picker to
+it.
 
 #### `GET /day` — every station in a location, for one day
 
@@ -492,7 +631,7 @@ The value lands under a key **named after `rankBy`**, so read it as
 
 ---
 
-### Stations — `/stations/*`
+### Stations — `/stations/*` · auth required, not product-scoped
 
 #### `GET /stations`
 
@@ -513,6 +652,11 @@ The value lands under a key **named after `rankBy`**, so read it as
 109 unfiltered, which the nginx `api` zone (10 r/s, burst 20) will throttle. Fetch
 once at startup, batch in chunks of ~10, and cache the assembled GeoJSON in
 `localStorage`; station metadata is effectively static.
+
+Now that these routes authenticate, those 109 requests also come out of the
+account's own 100-per-15-min budget rather than a separate IP-keyed one, so on an
+`apiuser` token the layer cannot be built in a single window at all — see §1.
+Caching stops being an optimization here and becomes the only way it works.
 
 `stationMeta` is a **relative path whose prefix is set by the CIS server's
 `NODE_ENV`** — `/api/v1/...` in development, `/v1/cis/...` otherwise. It resolves
@@ -589,7 +733,7 @@ Worth knowing before designing around something that is not there.
 | **GeoJSON** | No geometry from the API at all. Geometry is tiles-only |
 | **Station coordinates in bulk** | 1 + N as described in §5 |
 | **National / bbox / viewport queries** | Fan out over the 18 regions |
-| **Live updates** | The SSE channel under `/progress/:channelId` is admin-scoped import progress, not data push. Poll `nextUpdateAt` from `/products` |
+| **Live updates** | The SSE channel under `/progress/:channelId` is admin-scoped import progress, not data push. Poll `/products` — `nextUpdateAt` for when the next issuance is due, `latestData` for what has actually landed |
 | **Consistent envelopes** | Some endpoints return an object, some an array, and the PSGC field is named differently per product. Normalize once, at the fetch boundary |
 
 ---

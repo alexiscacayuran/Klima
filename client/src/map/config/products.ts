@@ -1,5 +1,6 @@
 import { CloudRain, Thermometer } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { CisProductName } from "@/api/products";
 import type { AdminLevel } from "@/map/types/features";
 
 /**
@@ -57,13 +58,44 @@ export type ProductDefinition = {
    * guessing here would silently change what the map hit-tests.
    */
   spatialLevel?: AdminLevel;
+  /**
+   * The CIS dataset this bulletin's data comes from, when there is one.
+   *
+   * Two vocabularies meet here. The rail lists the bulletins PAGASA publishes —
+   * which is what a user came to look at, and stays listed whether or not CIS
+   * has loaded it — while the API knows four datasets by names that are also
+   * the strings its auth middleware scopes a token on (docs/cis-api.md §2). The
+   * overlap is partial and not one-to-one: "10-day Forecast" is not `fiveday`,
+   * and no rail entry corresponds to `drought` or `daily-monitoring` yet.
+   *
+   * Absent means the rail shows the product but nothing fetches for it: no
+   * dates on the timeline, no choropleth. That is the honest state for a
+   * bulletin CIS has not published an endpoint for, and it is why this is
+   * optional rather than defaulted to a guess — a wrong name here would send
+   * every request for the product to a dataset about something else.
+   */
+  cisProduct?: CisProductName;
   /** Empty or absent until CIS publishes a mappable layer for the product. */
   variables?: readonly ProductVariable[];
 };
 
 export const PRODUCTS: readonly ProductDefinition[] = [
   { id: "farm-weather", label: "Farm Weather Forecast" },
-  { id: "ten-day", label: "10-day Forecast" },
+  {
+    id: "ten-day",
+    label: "10-day Forecast",
+    spatialLevel: 3,
+    cisProduct: "fiveday",
+    variables: [
+      {
+        id: "rainfall",
+        label: "Rainfall",
+        icon: CloudRain,
+      },
+      // No layers: the province endpoint carries no temperature at all, and the
+      // when CIS publishes a second mappable one, not before.
+    ],
+  },
   { id: "s2s", label: "S2S Forecast" },
   {
     id: "seasonal",
@@ -72,6 +104,10 @@ export const PRODUCTS: readonly ProductDefinition[] = [
     // province per month; the station shape is the same issuance at points, not
     // a finer polygon tier. See docs/cis-api.md §5.
     spatialLevel: 2,
+    // The one rail entry the API has a dataset for today. Its name happens to
+    // match the rail's own id; the others do not, which is why the two are
+    // separate fields rather than one.
+    cisProduct: "seasonal",
     variables: [
       {
         id: "rainfall",
@@ -113,9 +149,35 @@ export const variableKey = (
 /** The product half of a `variableKey` — the first segment, always present. */
 export const productIdFromKey = (key: string): string => key.split(":")[0];
 
-export const findProduct = (
-  productId: string,
-): ProductDefinition | undefined =>
+/** A `variableKey` taken apart again. */
+export type VariableKeyParts = {
+  productId: string;
+  variableId: string;
+  /** Absent for a variable whose row is itself the selection. */
+  layerId?: string;
+};
+
+/**
+ * The three ids behind a selection, or null when there is no selection.
+ *
+ * The inverse of `variableKey`, and the only thing that should undo it: a key
+ * is one string precisely so nothing passes the segments around separately, and
+ * a caller that needs them back — to ask which quantity a layer is about — gets
+ * them here rather than by splitting on a colon of its own.
+ *
+ * A key with no variable segment is not a selection at all; it is returned as
+ * null rather than as a product with an empty variable, so callers branch once.
+ */
+export const parseVariableKey = (
+  key: string | null,
+): VariableKeyParts | null => {
+  if (!key) return null;
+  const [productId, variableId, layerId] = key.split(":");
+  if (!variableId) return null;
+  return { productId, variableId, layerId };
+};
+
+export const findProduct = (productId: string): ProductDefinition | undefined =>
   PRODUCTS.find((product) => product.id === productId);
 
 /**
@@ -138,30 +200,26 @@ export const DEFAULT_SPATIAL_LEVEL: AdminLevel = 2;
  */
 export function spatialLevelForVariable(key: string | null): AdminLevel {
   if (!key) return DEFAULT_SPATIAL_LEVEL;
-  return findProduct(productIdFromKey(key))?.spatialLevel ?? DEFAULT_SPATIAL_LEVEL;
+  return (
+    findProduct(productIdFromKey(key))?.spatialLevel ?? DEFAULT_SPATIAL_LEVEL
+  );
+}
+
+/**
+ * The CIS dataset behind a selected layer, if it has one.
+ *
+ * Keyed off the *selected* variable rather than the expanded accordion product,
+ * for the same reason spatialLevelForVariable is: expanding a product fetches
+ * nothing, and only the innermost row decides what the map is asking CIS about.
+ */
+export function cisProductForVariable(
+  key: string | null,
+): CisProductName | undefined {
+  if (!key) return undefined;
+  return findProduct(productIdFromKey(key))?.cisProduct;
 }
 
 /** What the map opens on: the product the rail expands and the layer it paints. */
 export const DEFAULT_PRODUCT_ID = "seasonal";
 export const DEFAULT_VARIABLE_ID = "rainfall";
 export const DEFAULT_LAYER_ID = "forecast";
-
-/**
- * The six-month window the seasonal timeline scrubs through.
- *
- * Hard-coded to the design's sample issuance (Sep 2026 – Feb 2027) because the
- * real window is a property of the *issuance*, not of the app: CIS publishes a
- * lead time per bulletin, and the months move every time a forecast is issued.
- * Replace with the API's month list once the seasonal endpoint is wired — see
- * docs/cis-api.md — and delete this constant rather than editing it monthly.
- */
-export const SEASONAL_OUTLOOK_MONTHS = [
-  { id: "2026-09", label: "Sep" },
-  { id: "2026-10", label: "Oct" },
-  { id: "2026-11", label: "Nov" },
-  { id: "2026-12", label: "Dec" },
-  { id: "2027-01", label: "Jan" },
-  { id: "2027-02", label: "Feb" },
-] as const;
-
-export const DEFAULT_MONTH_ID = "2026-10";
