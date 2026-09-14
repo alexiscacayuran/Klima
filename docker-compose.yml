@@ -1,3 +1,14 @@
+# This file describes topology only — ports, mounts, networks, build inputs.
+# Every configurable VALUE lives in an env file named below, so there is exactly
+# one place to look for any of them and nothing here to silently override them.
+#
+#   .env.development  ->  docker compose up
+#   .env.production   ->  docker compose --profile prod up --build client-prod
+#
+# Each file documents its own variables. Nothing env-shaped is committed, so on
+# a fresh clone both must be recreated — vite.config.ts and nginx.conf.template
+# are the two things that read them.
+
 services:
   # Default service: `docker compose up` -> Vite dev server with HMR on :5173
   client:
@@ -14,18 +25,30 @@ services:
       # Anonymous volume keeps the image's node_modules from being shadowed by the
       # bind mount above (host modules may be built for a different platform).
       - /app/node_modules
-    environment:
-      - NODE_ENV=development
-      # Martin lives in the CIS stack, not here. MapLibre requests tiles from
-      # the *browser*, so this is resolved on the host, not inside this
-      # container — hence a published host port rather than a service name.
-      # Martin echoes the request Origin in its CORS headers, so no proxy is
-      # needed in development.
-      - VITE_TILES_URL=http://localhost:3001
+    # The repo root is not mounted, so Vite inside the container cannot read this
+    # file itself (vite.config.ts points envDir at the root, which resolves to "/"
+    # in here). Compose reads it instead and puts the values in the environment,
+    # which loadEnv merges — so the container and a host `npm run dev` end up on
+    # the same values by two different routes.
+    #
+    # required: false so `docker compose up` still starts before the file exists;
+    # the dev server then 401s on every request, which is the honest failure.
+    env_file:
+      - path: .env.development
+        required: false
+    extra_hosts:
+      # host.docker.internal is not defined on plain Linux/WSL2 engines the way
+      # it is on Docker Desktop; mapping it explicitly makes the /api proxy in
+      # vite.config.ts work on both.
+      - "host.docker.internal:host-gateway"
     stdin_open: true
     tty: true
 
-  # Production build served by nginx: `docker compose --profile prod up --build`
+  # Production build served by nginx: `docker compose --profile prod up --build client-prod`
+  #
+  # Name the service explicitly. A bare `--profile prod up` starts this service in
+  # ADDITION to the dev one above — profiles add to the default set rather than
+  # replacing it — and you would have Vite on :5173 and nginx on :8081 at once.
   client-prod:
     profiles: ["prod"]
     container_name: klima-client
@@ -36,15 +59,16 @@ services:
       # Not 8080: host ports are a global namespace like container names, and
       # the CIS stack's nominatim-dev already publishes 8080.
       - "8081:80"
-    environment:
-      # The production bundle requests same-origin "/tiles", which nginx proxies
-      # here. Unlike the dev var above, this one is resolved inside the
-      # container, so it goes back out through the host gateway to reach the
-      # CIS stack's published Martin port.
-      - TILES_UPSTREAM=http://host.docker.internal:3001
+    # Read by the nginx image's entrypoint, which runs envsubst over
+    # client/nginx.conf.template at container start. Note this file cannot carry
+    # VITE_ variables: those are compiled into the bundle by `npm run build`,
+    # which happens in the image with client/ as its context.
+    env_file:
+      - path: .env.production
+        required: false
     extra_hosts:
       # host.docker.internal is not defined on plain Linux/WSL2 engines the way
-      # it is on Docker Desktop; mapping it explicitly makes the proxy above
-      # work on both.
+      # it is on Docker Desktop; mapping it explicitly makes the proxy upstreams
+      # in nginx.conf.template work on both.
       - "host.docker.internal:host-gateway"
     restart: unless-stopped

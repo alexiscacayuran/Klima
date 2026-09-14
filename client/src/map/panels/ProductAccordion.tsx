@@ -1,24 +1,24 @@
-import { useId, useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { PRODUCTS, variableKey } from '@/map/config/products'
-import type { ProductDefinition, ProductVariable } from '@/map/config/products'
+import { useId, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { PRODUCTS, variableKey } from "@/map/config/products";
+import type { ProductDefinition, ProductVariable } from "@/map/config/products";
 
 type ProductAccordionProps = {
   /** Defaults to the full catalogue; injectable so the rail is testable. */
-  products?: readonly ProductDefinition[]
+  products?: readonly ProductDefinition[];
   /** The single expanded product, or null for all-collapsed. */
-  openProductId: string | null
-  onOpenProductChange: (productId: string | null) => void
+  openProductId: string | null;
+  onOpenProductChange: (productId: string | null) => void;
   /** The layer currently painted on the map — see `variableKey`. */
-  selectedVariable: string | null
+  selectedVariable: string | null;
   onSelectVariable: (
     productId: string,
     variableId: string,
     layerId?: string,
-  ) => void
-  className?: string
-}
+  ) => void;
+  className?: string;
+};
 
 /**
  * The product rail: which PAGASA bulletin the map is showing.
@@ -51,28 +51,28 @@ export function ProductAccordion({
   onSelectVariable,
   className,
 }: ProductAccordionProps) {
-  const idPrefix = useId()
+  const idPrefix = useId();
 
   return (
     <div
       className={cn(
-        'pointer-events-auto flex w-[300px] flex-col gap-2 font-cis',
+        "pointer-events-auto flex w-[250px] flex-col gap-2 font-cis",
         className,
       )}
     >
       {products.map((product) => {
-        const isOpen = product.id === openProductId
-        const panelId = `${idPrefix}-${product.id}-panel`
-        const headerId = `${idPrefix}-${product.id}-header`
+        const isOpen = product.id === openProductId;
+        const panelId = `${idPrefix}-${product.id}-panel`;
+        const headerId = `${idPrefix}-${product.id}-header`;
 
         return (
           <div
             key={product.id}
             className={cn(
-              'overflow-hidden rounded-panel backdrop-blur-md transition-colors duration-150',
+              "overflow-hidden rounded-panel backdrop-blur-md transition-colors duration-150",
               isOpen
-                ? 'border border-brand-medium bg-panel-strong'
-                : 'border border-line bg-panel',
+                ? "border border-brand-medium bg-panel-strong"
+                : "border border-line bg-panel",
             )}
           >
             <button
@@ -82,10 +82,10 @@ export function ProductAccordion({
               aria-controls={panelId}
               onClick={() => onOpenProductChange(isOpen ? null : product.id)}
               className={cn(
-                'flex h-11 w-full items-center justify-between px-3.5 text-left',
-                'text-sm text-fg-heading outline-none',
-                'focus-visible:ring-3 focus-visible:ring-brand/50',
-                isOpen ? 'border-b border-line font-semibold' : 'font-medium',
+                "flex h-11 w-full items-center justify-between px-3.5 text-left",
+                "text-sm text-fg-heading outline-none",
+                "focus-visible:ring-3 focus-visible:ring-brand/50",
+                isOpen ? "border-b border-line font-semibold" : "font-medium",
               )}
             >
               {product.label}
@@ -93,8 +93,8 @@ export function ProductAccordion({
                 aria-hidden
                 className={cn(
                   // 150ms is the CIS accordion-chevron duration.
-                  'size-4 transition-transform duration-150',
-                  isOpen ? 'rotate-180 text-brand' : 'text-fg-subtle',
+                  "size-4 transition-transform duration-150",
+                  isOpen ? "rotate-180 text-brand" : "text-fg-subtle",
                 )}
               />
             </button>
@@ -112,27 +112,27 @@ export function ProductAccordion({
               </div>
             )}
           </div>
-        )
+        );
       })}
     </div>
-  )
+  );
 }
 
 type SelectionProps = {
-  selectedVariable: string | null
+  selectedVariable: string | null;
   onSelectVariable: (
     productId: string,
     variableId: string,
     layerId?: string,
-  ) => void
-}
+  ) => void;
+};
 
 function ProductVariables({
   product,
   selectedVariable,
   onSelectVariable,
 }: { product: ProductDefinition } & SelectionProps) {
-  const variables = product.variables ?? []
+  const variables = product.variables ?? [];
 
   // The catalogue carries products CIS has not published a mappable layer for.
   // Saying so beats an empty box, and beats omitting the product entirely —
@@ -142,7 +142,7 @@ function ProductVariables({
       <p className="px-3.5 py-3 text-xs leading-relaxed text-fg-body">
         No mapped layers published for this product yet.
       </p>
-    )
+    );
   }
 
   return (
@@ -167,16 +167,16 @@ function ProductVariables({
         ),
       )}
     </ul>
-  )
+  );
 }
 
 /** Shared geometry for the two variable-level rows, so a group header and a
  *  single-layer variable sit on the same grid whichever one a product gets. */
 const menuButton = cn(
-  'flex h-8 w-full items-center gap-2.5 overflow-hidden rounded-md px-2',
-  'text-left text-sm outline-none transition-colors duration-150',
-  'focus-visible:ring-2 focus-visible:ring-brand/50',
-)
+  "flex h-8 w-full items-center gap-2.5 overflow-hidden rounded-md px-2",
+  "text-left text-sm outline-none transition-colors duration-150",
+  "focus-visible:ring-2 focus-visible:ring-brand/50",
+);
 
 /**
  * A variable with more than one mapped layer: a disclosure header over an
@@ -193,14 +193,15 @@ function VariableGroup({
   selectedVariable,
   onSelectVariable,
 }: { productId: string; variable: ProductVariable } & SelectionProps) {
-  const layers = variable.layers ?? []
-  const listId = useId()
-  const Icon = variable.icon
+  const layers = variable.layers ?? [];
+  const listId = useId();
+  const Icon = variable.icon;
 
   const holdsSelection = layers.some(
-    (layer) => selectedVariable === variableKey(productId, variable.id, layer.id),
-  )
-  const [isOpen, setIsOpen] = useState(holdsSelection)
+    (layer) =>
+      selectedVariable === variableKey(productId, variable.id, layer.id),
+  );
+  const [isOpen, setIsOpen] = useState(holdsSelection);
 
   return (
     <li>
@@ -211,26 +212,26 @@ function VariableGroup({
         onClick={() => setIsOpen((open) => !open)}
         className={cn(
           menuButton,
-          'hover:bg-line/60',
+          "hover:bg-line/60",
           // The selected layer's own row carries the fill; marking its parent
           // too would read as two selections. It gets weight and a brand icon
           // instead, which survives the group being collapsed.
-          holdsSelection ? 'font-medium text-fg-heading' : 'text-fg-body',
+          holdsSelection ? "font-medium text-fg-heading" : "text-fg-body",
         )}
       >
         <Icon
           aria-hidden
           className={cn(
-            'size-[15px] shrink-0',
-            holdsSelection ? 'text-brand-strong' : 'text-fg-subtle',
+            "size-[15px] shrink-0",
+            holdsSelection ? "text-brand-strong" : "text-fg-subtle",
           )}
         />
         <span className="truncate">{variable.label}</span>
         <ChevronRight
           aria-hidden
           className={cn(
-            'ml-auto size-3.5 shrink-0 text-fg-subtle transition-transform duration-150',
-            isOpen && 'rotate-90',
+            "ml-auto size-3.5 shrink-0 text-fg-subtle transition-transform duration-150",
+            isOpen && "rotate-90",
           )}
         />
       </button>
@@ -242,41 +243,42 @@ function VariableGroup({
         <ul
           id={listId}
           className={cn(
-            'mx-3.5 mt-0.5 flex min-w-0 translate-x-px flex-col gap-0.5',
-            'border-l border-line px-2.5 py-0.5',
+            "mx-3.5 mt-0.5 flex min-w-0 translate-x-px flex-col gap-0.5",
+            "border-l border-line px-2.5 py-0.5",
           )}
         >
           {layers.map((layer) => {
             const isSelected =
-              selectedVariable === variableKey(productId, variable.id, layer.id)
+              selectedVariable ===
+              variableKey(productId, variable.id, layer.id);
 
             return (
               <li key={layer.id}>
                 <button
                   type="button"
-                  aria-current={isSelected ? 'true' : undefined}
+                  aria-current={isSelected ? "true" : undefined}
                   onClick={() =>
                     onSelectVariable(productId, variable.id, layer.id)
                   }
                   className={cn(
-                    'flex h-7 w-full -translate-x-px items-center overflow-hidden',
-                    'rounded-md px-2 text-left text-sm outline-none',
-                    'transition-colors duration-150',
-                    'focus-visible:ring-2 focus-visible:ring-brand/50',
+                    "flex h-7 w-full -translate-x-px items-center overflow-hidden",
+                    "rounded-md px-2 text-left text-sm outline-none",
+                    "transition-colors duration-150",
+                    "focus-visible:ring-2 focus-visible:ring-brand/50",
                     isSelected
-                      ? 'bg-brand-soft font-medium text-fg-heading'
-                      : 'text-fg-body hover:bg-line/60',
+                      ? "bg-brand-soft font-medium text-fg-heading"
+                      : "text-fg-body hover:bg-line/60",
                   )}
                 >
                   <span className="truncate">{layer.label}</span>
                 </button>
               </li>
-            )
+            );
           })}
         </ul>
       )}
     </li>
-  )
+  );
 }
 
 /** A variable CIS maps one way: the row is the layer, so it selects directly. */
@@ -286,31 +288,31 @@ function VariableRow({
   selectedVariable,
   onSelectVariable,
 }: { productId: string; variable: ProductVariable } & SelectionProps) {
-  const isSelected = selectedVariable === variableKey(productId, variable.id)
-  const Icon = variable.icon
+  const isSelected = selectedVariable === variableKey(productId, variable.id);
+  const Icon = variable.icon;
 
   return (
     <li>
       <button
         type="button"
-        aria-current={isSelected ? 'true' : undefined}
+        aria-current={isSelected ? "true" : undefined}
         onClick={() => onSelectVariable(productId, variable.id)}
         className={cn(
           menuButton,
           isSelected
-            ? 'bg-brand-soft font-medium text-fg-heading'
-            : 'text-fg-body hover:bg-line/60',
+            ? "bg-brand-soft font-medium text-fg-heading"
+            : "text-fg-body hover:bg-line/60",
         )}
       >
         <Icon
           aria-hidden
           className={cn(
-            'size-[15px] shrink-0',
-            isSelected ? 'text-brand-strong' : 'text-fg-subtle',
+            "size-[15px] shrink-0",
+            isSelected ? "text-brand-strong" : "text-fg-subtle",
           )}
         />
         <span className="truncate">{variable.label}</span>
       </button>
     </li>
-  )
+  );
 }

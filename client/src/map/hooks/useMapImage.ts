@@ -8,7 +8,7 @@ import { useMapEvent } from './useMapEvent'
  *
  * For the *static* marker sprites (pin, station, station-active) prefer the
  * sheet Martin serves — it is already wired into the style by
- * utils/stripLabels → withMartinAssets, so those need no registration at all.
+ * utils/basemapStyle → withMartinAssets, so those need no registration at all.
  * This is for images drawn at runtime: canvas-rendered wind barbs, pulsing
  * alert halos, anything whose pixels depend on data.
  *

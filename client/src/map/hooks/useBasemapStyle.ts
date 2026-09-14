@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import type { StyleSpecification } from 'maplibre-gl'
 import { BASEMAPS, styleAssets } from '@/map/config/styles'
 import type { BasemapId } from '@/map/config/styles'
-import { stripSymbolLayers, withMartinAssets } from '@/map/utils/stripLabels'
+import { adoptBasemapLabels, withMartinAssets } from '@/map/utils/basemapStyle'
 
 /**
- * Loads a basemap style, strips its labels, and repoints its glyph/sprite
- * endpoints at Martin.
+ * Loads a basemap style, keeps its place labels and drops the rest of its
+ * symbol tier, marks the seam the app's own labels sit above, and repoints its
+ * glyph/sprite endpoints at Martin.
  *
  * <Map mapStyle> accepts a URL, which would be simpler — but MapLibre would
  * then own the fetch and we would never get to edit the result. Fetching it
@@ -32,7 +33,7 @@ export function useBasemapStyle(id: BasemapId): StyleSpecification | undefined {
         return response.json() as Promise<StyleSpecification>
       })
       .then((loaded) =>
-        setStyle(withMartinAssets(stripSymbolLayers(loaded), styleAssets())),
+        setStyle(withMartinAssets(adoptBasemapLabels(loaded), styleAssets())),
       )
       .catch((error: unknown) => {
         // An abort is the expected path when the id changes mid-flight.

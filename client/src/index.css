@@ -313,3 +313,101 @@
     color: var(--muted-foreground);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Selection popup — map/overlays/LocationPopup
+
+   Deliberately *unlayered*, unlike the block above. maplibre-gl.css arrives as
+   a plain stylesheet (imported in MapRoot), and unlayered declarations beat
+   every cascade layer regardless of specificity — so the same rules written
+   inside `@layer components` would lose to MapLibre's own defaults. The
+   `.maplibregl-ctrl-*` overrides above have exactly that problem; they are
+   dormant only because no control that uses them is currently mounted.
+
+   Everything is scoped to `.klima-popup`, the className the component passes,
+   which also puts each selector one class above the MapLibre rule it replaces.
+   That, not source order, is what settles the tie — Vite's injection order for
+   two stylesheets is not something to rely on.
+   --------------------------------------------------------------------------- */
+
+.klima-popup .maplibregl-popup-content {
+  /* The map container sets `font: 12px/20px Helvetica Neue` on everything
+     inside it. The family is restored by `font-cis` on the content itself; the
+     metrics have to be overridden here, before Tailwind's per-element sizes. */
+  font-size: 13px;
+  line-height: 1.45;
+
+  background: var(--cis-panel-strong);
+  border: 1px solid var(--cis-line);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--cis-shadow-float);
+  backdrop-filter: blur(12px);
+  /* Tight enough that the three lines inside read as one block. The card is a
+     readout, not a panel; the shadow and the radius are what hold it off the
+     map, so the padding does not also have to. */
+  padding: 10px 12px;
+}
+
+/* LocationPopup pins the popup to the `bottom-left` anchor, so one corner
+   and one tail are the only ones this popup can draw. The other seven are not
+   written here — they would be rules no state reaches, and the tail below is
+   cut for this corner in particular.
+
+   MapLibre squares off whichever corner the tail meets, so the two read as one
+   shape. Restated at a higher specificity because the radius above replaces the
+   3px default that rule was written against. */
+.klima-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-content {
+  border-bottom-left-radius: 0;
+}
+
+/* A leader line, not a wedge. MapLibre builds the tip out of a zero-sized box
+   with a 10px transparent border and one side coloured; both halves of that
+   have to go before the element can be given a width and a height of its own.
+   What is left is a hairline dropping from the panel's bottom-left corner to
+   the dot — the panel's left edge carried on down to the point it names, which
+   is a quieter way to say "this panel is about that place" than a wedge aimed
+   at it.
+
+   Its height is the entire gap between the two, which is why the popup passes
+   no `offset`: for this anchor MapLibre stacks the tip below the content
+   (`column-reverse`) and holds it to the left edge (`align-self: flex-start`),
+   so the bottom of this line lands on the pinned coordinate and its last few px
+   run under the dot — the marker takes a z-index for exactly that overlap (see
+   LocationPopup), so the dot caps the line rather than being crossed by it.
+   The card's own fill, not the marker's brand: the line is the panel's edge
+   carried down, so it belongs to the thing it hangs from and leaves the dot as
+   the only brand mark on the map. It stays pointer-transparent with the rest of
+   the popup container, so a 28px line does not carve a dead strip out of the
+   map. */
+.klima-popup.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip {
+  width: 2px;
+  height: 28px;
+  border: none;
+  background: var(--cis-panel-strong);
+}
+
+/* MapLibre's close button is a bare `×` pinned to the corner with no padding.
+   Given a hit target and the CIS hover, it becomes the same secondary action
+   the rest of the chrome uses. */
+.klima-popup .maplibregl-popup-close-button {
+  top: 4px;
+  right: 4px;
+  padding: 2px 5px 3px;
+  border-radius: var(--radius-field);
+  color: var(--cis-fg-subtle);
+  font-size: 15px;
+  line-height: 1;
+  transition:
+    color 150ms,
+    background-color 150ms;
+}
+
+.klima-popup .maplibregl-popup-close-button:hover {
+  background-color: var(--cis-line);
+  color: var(--cis-fg-heading);
+}
+
+.klima-popup .maplibregl-popup-close-button:focus-visible {
+  outline: 2px solid var(--cis-brand);
+  outline-offset: 1px;
+}

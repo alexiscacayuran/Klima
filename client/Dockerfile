@@ -25,6 +25,19 @@ COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 # on the host, so the default reaches back out through the Docker host gateway;
 # override in docker-compose.yml when the two stacks share a network.
 ENV TILES_UPSTREAM=http://host.docker.internal:3001
+
+# Where the CIS JSON API lives, same reasoning. Port 80 rather than 3001: the
+# Express app is reached through the CIS stack's own nginx, which is what mounts
+# it at /api/v1.
+ENV API_UPSTREAM=http://host.docker.internal
+
+# The CIS bearer token, injected into every proxied /api/ request by
+# nginx.conf.template. Empty by default for two reasons: a token belongs to a
+# deployment rather than to an image, and envsubst only substitutes variables
+# that exist — an undefined one would leave `${CIS_API_TOKEN}` in the config
+# verbatim and nginx would refuse to start on the unknown variable. Empty means
+# no header is injected; set it at run time (docker-compose.yml) to authenticate.
+ENV CIS_API_TOKEN=""
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

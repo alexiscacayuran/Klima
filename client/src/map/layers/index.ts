@@ -11,10 +11,15 @@ import { LAYER_IDS } from '@/map/config/constants'
  *
  * Adding a layer means adding it here too, or it will not be hit-testable.
  *
- * Note the basemap contributes no symbol layers — they are stripped in
- * utils/stripLabels — so the entire label tier is ordered by this array.
+ * Mount order is not the whole story. Everything that draws data passes
+ * `beforeId={LAYER_IDS.labelAnchor}` and lands under a fixed seam in the style,
+ * so a raster overlay added later — in a component mounted after
+ * AdminBoundaries — cannot bury the place names. The label layer passes no
+ * beforeId and stays on top. Within each band, mount order still decides.
  */
 export const LAYER_ORDER: string[] = [
+  // --- under the seam: beforeId={LAYER_IDS.labelAnchor} ---
+
   // Weather rasters and choropleth fills belong here, *below* the boundary
   // strokes, so administrative edges stay readable on top of data. A
   // choropleth of the product's own resolution paints on the child tier, which
@@ -27,6 +32,24 @@ export const LAYER_ORDER: string[] = [
   // frame around it visible.
   LAYER_IDS.boundariesChildFill,
   LAYER_IDS.boundariesChildLine,
+
+  // --- over the seam: no beforeId, so this appends to the top of the style ---
+
+  // The administrative label tier, above the basemap's own place labels, which
+  // sit between the seam and this (utils/basemapStyle keeps them). Above,
+  // because this is the tier carrying data: a city name is orientation, and the
+  // name of the unit a forecast is *about* is the reading. Being later in the
+  // style settles collisions in its favour too — MapLibre places symbol layers
+  // from the top of the style down, so whatever is later is placed first and
+  // keeps its spot, and a province name is never dropped for a town's.
+  //
+  // It reads a point source rather than the boundary tiles, because a polygon
+  // cannot be labelled once; see utils/labelAnchors.
+  //
+  // The DOM marker and popup in overlays/LocationPopup are above even this:
+  // they are elements over the canvas, not style layers, so they have no place
+  // in this array and win by construction rather than by ordering.
+  LAYER_IDS.boundariesLabel,
 ]
 
 /**

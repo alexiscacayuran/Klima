@@ -73,3 +73,11 @@ package-lock.json
 .claude/agents/
 
 .codeatlas
+
+# Local environment. .env.development and .env.production carry the CIS bearer
+# token that docker-compose.yml hands to each service, so every env file here is
+# a credential file. Nothing env-shaped is committed — the variables are
+# documented in the files themselves, and in the two things that read them:
+# client/vite.config.ts and client/nginx.conf.template.
+.env
+.env.*

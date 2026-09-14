@@ -39,6 +39,55 @@ server {
         add_header Cache-Control "public, max-age=3600";
     }
 
+    # The CIS JSON API. Proxied for a stronger reason than the tiles above:
+    # Martin sets its own CORS headers and would work cross-origin, while the
+    # Express app sets none at all, so the API *must* be same-origin in every
+    # mode or the browser blocks it (docs/cis-api.md §1).
+    #
+    # No trailing slash on proxy_pass, unlike /tiles/ — Express mounts its
+    # routes at /api/v1, so the prefix has to survive the hop rather than be
+    # stripped. src/api/client.ts defaults VITE_API_URL to "/api/v1", so that
+    # default and this location are one contract.
+    location /api/ {
+        proxy_pass         ${API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # The token. Every GET under /api/v1 needs one now — /products and
+        # /seasonal included, so an unset token is a blank map, not a partly
+        # working one (docs/cis-api.md §2).
+        #
+        # Injected here so it lives in the container's environment rather than
+        # in the bundle: a VITE_-prefixed token is compiled into the JS and
+        # served to every visitor. CIS_API_TOKEN is substituted at container
+        # start (see Dockerfile, which defaults it to empty so nginx always has
+        # the variable defined and this config parses either way).
+        #
+        # The fallback is the client's own header rather than nothing, which is
+        # what keeps VITE_API_TOKEN working for a deployment that sets it: a
+        # bare `proxy_set_header Authorization ""` would *strip* what the
+        # browser sent. nginx drops a header set to an empty string, so a
+        # deployment with neither token sends none at all.
+        # Through a variable, not compared inline: `if` takes a variable on its
+        # left, so an empty substitution has to arrive as one for this to parse
+        # at all. `set` inside `if` is one of the two uses the directive is
+        # actually safe for.
+        set $cis_token         "${CIS_API_TOKEN}";
+        set $cis_authorization $http_authorization;
+        if ($cis_token != "") {
+            set $cis_authorization "Bearer $cis_token";
+        }
+        proxy_set_header   Authorization $cis_authorization;
+
+        # Freshness is the whole point of /products, and issuances land on a
+        # schedule the client polls for. A cached catalogue would report data
+        # that has already been superseded.
+        add_header Cache-Control "no-store";
+    }
+
     # SPA fallback: unknown paths render the app, which handles routing.
     location / {
         add_header Cache-Control "no-cache";

@@ -14,15 +14,6 @@ export type TypedFeature<P> = MapGeoJSONFeature & { properties: P }
 export const ADMIN_LEVELS = [1, 2, 3] as const
 export type AdminLevel = (typeof ADMIN_LEVELS)[number]
 
-/**
- * Level 3 is served empty below this zoom, server-side.
- *
- * 1642 municipality polygons in one low-zoom tile is a payload no amount of
- * generalization rescues, and nothing is legible at that scale. Mirrored here so
- * the UI can explain the blank map rather than looking broken.
- */
-export const LEVEL_3_MIN_ZOOM = 8
-
 export const ADMIN_LEVEL_LABELS: Record<AdminLevel, string> = {
   1: 'Regions',
   2: 'Provinces',
@@ -114,6 +105,40 @@ export const toAdminLocation = (
   geoLevel: feature.properties.geo_level,
   parentPsgc: feature.properties.parent_psgc,
 })
+
+/**
+ * Nouns for the tiers, keyed by the row's own `geo_level`.
+ *
+ * Read off `geoLevel` rather than `level`, because at level 2 the two disagree
+ * by design: `adm2_provinces` is a complete tiling of the country rather than a
+ * list of provinces, so four rows are promoted into it from the tiers either
+ * side — NCR from level 1, and Kalayaan, City of Davao and City of Isabela from
+ * level 3 (docs/vector-tiles.md). A product published per province therefore
+ * resolves some clicks to a city or to a region, and calling one of those
+ * "Province" would be wrong in the one place the user is reading it.
+ */
+const GEO_LEVEL_NOUNS: Record<string, string> = {
+  Reg: 'Region',
+  Prov: 'Province',
+  Mun: 'Municipality',
+  City: 'City',
+}
+
+/**
+ * What the tier is called when `geo_level` carries something this build does not
+ * know — a value added server-side after this shipped. Level 3 is deliberately
+ * the pair, not a guess between them: it holds both, and only `geo_level` says
+ * which, so the fallback answers the question it can actually answer.
+ */
+const ADMIN_LEVEL_NOUNS: Record<AdminLevel, string> = {
+  1: 'Region',
+  2: 'Province',
+  3: 'City or municipality',
+}
+
+/** What to call a place's tier, in the singular, for a reader. */
+export const tierLabel = (location: AdminLocation): string =>
+  GEO_LEVEL_NOUNS[location.geoLevel] ?? ADMIN_LEVEL_NOUNS[location.level]
 
 /**
  * The parent-tier unit a place sits inside — itself, at level 1.
