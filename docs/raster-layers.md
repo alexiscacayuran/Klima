@@ -91,14 +91,41 @@ So in development the browser hits MinIO directly, no proxy, exactly like
 ```ts
 const CONFIGURED_RASTER_URL =
   import.meta.env.VITE_RASTER_URL ??
-  (import.meta.env.DEV
-    ? "http://localhost:9000/seasonal-forecast"
-    : "/rasters");
+  (import.meta.env.DEV ? "http://localhost:9000" : "/rasters");
 ```
 
-with `VITE_RASTER_URL=http://localhost:9000/seasonal-forecast` in
-`.env.development` beside `VITE_TILES_URL` — browser-resolved, so a published host
-port rather than a container hostname, for the reason that file already explains.
+with `VITE_RASTER_URL=http://localhost:9000` in `.env.development` beside
+`VITE_TILES_URL` — browser-resolved, so a published host port rather than a
+container hostname, for the reason that file already explains.
+
+### The origin, without the bucket
+
+Earlier drafts of this section wrote `…:9000/seasonal-forecast` into the
+variable. **The implementation does not**, and the difference is the one place it
+knowingly departs from this document.
+
+`seasonal-forecast` is *one product's* bucket. Seasonal is the only product
+publishing rasters today, but it is not expected to be the last, and a base URL
+with a bucket in it makes the second one a new environment variable, a new nginx
+block and a second base-URL constant. So the variable carries the origin and the
+bucket moves onto the product, in
+[map/config/rasters.ts](../client/src/map/config/rasters.ts):
+
+```ts
+const SEASONAL_RASTERS: RasterSource = {
+  bucket: "seasonal-forecast",
+  key: ({ prefix, issuedAt, step, ext }) => /* §4 */,
+};
+
+export const RASTER_SOURCES: Partial<Record<CisProductName, RasterSource>> = {
+  seasonal: SEASONAL_RASTERS,
+};
+```
+
+The URL is then `{origin}/{bucket}/{key}` and adding a product is a config entry.
+In production the bucket is simply the first path segment after `/rasters/`,
+which the nginx block strips nothing from — see the trailing slash on
+`proxy_pass` in [nginx.conf.template](../client/nginx.conf.template).
 
 ### Production is unsolved, deliberately
 
@@ -166,6 +193,33 @@ export function rasterUrl(
 This is the raster counterpart to the `psgc` join in
 [vector-tiles.md](vector-tiles.md): the same issuance that fills the choropleth
 names the surface underneath it, so the two can never drift apart on screen.
+
+### …except that the app does not always have that response
+
+"The `/seasonal` response the app already fetches" is true of the selection
+popup and false of the surface, which is the gap this section walks past.
+[useSeasonalForecast](../client/src/map/hooks/useSeasonalForecast.ts) keys on the
+**pin** and returns `idle` with nothing pinned — while the raster covers the
+whole country from first paint, pin or no pin. So on load there is no response to
+read `issuedAt` out of.
+
+The catalogue does not answer it either. `/products` publishes `latestData`,
+which for seasonal is the first **forecast month** — `2026-09-01` against a
+`2026-08-26` issuance. Close enough to look like the answer, wrong enough to 404.
+
+`issuedAt` is a property of the issuance, not of the place: every row of every
+`/seasonal` response for one issuance carries the same value (verified across
+Abra, NCR and Cavite, 2026-09-14). But the endpoint has no national form —
+`location` is required, and omitting it is a `400 Location is required.` — so
+[useIssuance](../client/src/map/hooks/useIssuance.ts) names one province on
+behalf of the country, caches the answer at module scope, and keeps the fact that
+a province was involved to itself.
+
+**This is a workaround, and the right fix is upstream.** An issuance endpoint
+that names the date without naming a place would delete that hook. Until CIS
+publishes one, the anchor is the cheapest honest option: listing is dev-only (§3)
+and reconstructing the date from `nextUpdateAt` assumes a publication cadence
+that will eventually slip.
 
 A month with no published raster is a 404, not an error state worth surfacing —
 the same posture [cis-api.md §6](cis-api.md) takes toward provinces with no data.
@@ -291,10 +345,29 @@ Mirroring the existing map modules:
 
 ```
 client/src/map/
-├── config/rasters.ts          base URL (§2), rasterUrl() (§4), variant prefixes
+├── config/rasters.ts          base URL (§2), RASTER_SOURCES, RASTER_VARIANTS, rasterUrl() (§4)
+├── hooks/useIssuance.ts       issuedAt without a pin — see §4
 ├── hooks/useRasterImage.ts    HEAD + loadTextureData, keyed on the URL
-└── layers/SeasonalRaster.tsx  MapboxOverlay + RasterLayer
+└── layers/RasterOverlay.tsx   MapboxOverlay + RasterLayer
 ```
+
+Built as `RasterOverlay`, not `SeasonalRaster`: there is exactly **one**
+`MapboxOverlay` in the app and there has to be, because two would fight over the
+WebGL context. It is a host that draws whichever variant the selection resolves
+to, so a second raster product arrives already working rather than mounting a
+second overlay.
+
+`interleaved: true` is required rather than preferred. Overlaid mode puts deck.gl
+on its own canvas above the map, burying the boundary strokes and place names
+under the surface they are meant to be read over; interleaved shares MapLibre's
+context and honours `beforeId`, which is what lets the layer take the slot
+`LAYER_ORDER` reserves for it.
+
+One more peer note for §6: `geotiff` is an **optional** peer reached through a
+dynamic `import()` inside a try/catch, and the WebP path never executes it — but
+Rollup still has to resolve the specifier or `vite build` fails. Klima aliases it
+to a stub ([src/shims/geotiff.ts](../client/src/shims/geotiff.ts)) rather than
+installing ~500 kB for an unreachable branch.
 
 `useRasterImage` should key on the URL string and nothing else — it is already
 the cache key inside `loadTextureData`, so any other dependency just adds a way

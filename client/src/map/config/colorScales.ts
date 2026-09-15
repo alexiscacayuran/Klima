@@ -143,13 +143,13 @@ function buildScale(breaks: readonly ScaleBreak[]): ColorScale {
  * classification, unlike the percent-of-normal categories below.
  */
 export const RAINFALL_FORECAST_SCALE = buildScale([
-  { value: 0, color: "#e1e1e1", label: "Very dry month" },
-  { value: 50, color: "#bee8ff", label: "Dry month" },
-  { value: 100, color: "#01c5ff", label: "Moderate month" },
-  { value: 200, color: "#0071fe", label: "Wet month" },
-  { value: 300, color: "#004da7", label: "Very wet month" },
-  { value: 400, color: "#002573", label: "Extremely wet month" },
-  { value: 500, color: "#000000", label: "Exceptional rainfall" },
+  { value: 25, color: "#e1e1e1", label: "Very dry month" },
+  { value: 75, color: "#bee8ff", label: "Dry month" },
+  { value: 125, color: "#01c5ff", label: "Moderate month" },
+  { value: 225, color: "#0071fe", label: "Wet month" },
+  { value: 325, color: "#004da7", label: "Very wet month" },
+  { value: 425, color: "#002573", label: "Extremely wet month" },
+  { value: 525, color: "#000000", label: "Exceptional rainfall" },
 ]);
 
 /**
@@ -167,10 +167,17 @@ export const RAINFALL_FORECAST_SCALE = buildScale([
  * around the neutral at 80–120 and share the forecast ramp's wet end, so the
  * two layers read as one map. Replace the five hexes when CIS publishes the
  * real ones — nothing else here changes.
+ *
+ * The 160 break carries its weight beyond the legend. This table is also the
+ * raster palette (config/rasters.ts rasterPalette), and the published surface is
+ * quantised against a range running to 250 — so a table stopping at 120 painted
+ * everything from "above normal" to the wettest pixel in the country one flat
+ * blue, across more than half the domain.
  */
 export const RAINFALL_PERCENT_OF_NORMAL_SCALE = buildScale([
-  { value: 0, color: "#fe0000", label: "Way below normal" },
-  { value: 40, color: "#ffff00", label: "Below normal" },
-  { value: 80, color: "#38a700", label: "Near normal" },
-  { value: 120, color: "#005be7", label: "Above normal" },
+  { value: 20, color: "#fe0000", label: "Way below normal" },
+  { value: 60, color: "#ffff00", label: "Below normal" },
+  { value: 100, color: "#38a700", label: "Near normal" },
+  { value: 140, color: "#005be7", label: "Above normal" },
+  { value: 180, color: "#002573", label: "Way above normal" },
 ]);

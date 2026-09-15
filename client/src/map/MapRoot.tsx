@@ -7,6 +7,7 @@ import { TitleSearchBar } from "./controls/TitleSearchBar";
 import { LocationPopup } from "./overlays/LocationPopup";
 import { ProductAccordion } from "./panels/ProductAccordion";
 import { AdminBoundaries } from "./sources/AdminBoundaries";
+import { RasterOverlay } from "./layers/RasterOverlay";
 import { useBasemapStyle } from "./hooks/useBasemapStyle";
 import { useTimeline } from "./hooks/useTimeline";
 import type { TimelineState } from "./hooks/useTimeline";
@@ -32,11 +33,23 @@ import "maplibre-gl/dist/maplibre-gl.css";
  * Data layers, in paint order — bottom first.
  *
  * Mount order here *is* draw order in MapLibre, so this must match LAYER_ORDER
- * in layers/index.ts. Weather overlays belong above AdminBoundaries' fills and
- * below its strokes; see the note in that file.
+ * in layers/index.ts.
+ *
+ * RasterOverlay is the exception that proves it, and the reason it is mounted
+ * *last* despite painting *first*. It is a deck.gl layer interleaved into the
+ * style rather than a <Source>, so it takes its slot by naming
+ * boundariesParentFill as its beforeId — and that layer has to exist in the
+ * style before the overlay can sit in front of it. Mounted earlier it would
+ * find no such id and append to the top, burying every boundary and label under
+ * the surface they are meant to be read over.
  */
 function DataLayers() {
-  return <AdminBoundaries />;
+  return (
+    <>
+      <AdminBoundaries />
+      <RasterOverlay />
+    </>
+  );
 }
 
 /**

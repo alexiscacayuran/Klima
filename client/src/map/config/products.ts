@@ -14,7 +14,7 @@ import type { AdminLevel } from "@/map/types/features";
  * layers of its own is that leaf itself.
  *
  * A registry rather than JSX so the rail needs no edit when a product lands,
- * the same arrangement WEATHER_LAYERS uses for overlays. Products without
+ * the same arrangement RASTER_LAYERS uses for overlays. Products without
  * variables are the ones CIS has not published a mappable layer for yet; the
  * rail shows them with an honest empty state rather than hiding them, because
  * their absence from the list would read as "PAGASA does not make this".

@@ -729,7 +729,7 @@ Worth knowing before designing around something that is not there.
 
 | Not available | Consequence |
 |---|---|
-| **Raster / COG serving** | Seasonal forecast rasters are converted to COG and stored in MinIO, but nothing serves them — no presigned URLs, no titiler in the stack. Raster overlays are not possible today; provinces and stations are the only renderable resolutions |
+| **Raster / COG serving** | Still nothing *in this API* — no presigned URLs, no titiler. But the rasters are readable: MinIO serves the WebPs directly over an anonymous prefix in the dev stack, which is how the map paints them. See [raster-layers.md](raster-layers.md); production is still unsolved |
 | **GeoJSON** | No geometry from the API at all. Geometry is tiles-only |
 | **Station coordinates in bulk** | 1 + N as described in §5 |
 | **National / bbox / viewport queries** | Fan out over the 18 regions |

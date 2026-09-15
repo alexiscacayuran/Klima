@@ -2,14 +2,14 @@ import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { BasemapId } from '@/map/config/styles'
 import { DEFAULT_BASEMAP } from '@/map/config/styles'
-import { WEATHER_LAYERS } from '@/map/layers'
+import { RASTER_LAYERS } from '@/map/layers'
 import type { AdminLevel } from '@/map/types/features'
 import { DEFAULT_ADMIN_LEVEL, MapSettingsContext } from './mapSettingsContext'
 
 /** Seeded from the registry so a layer's default lives with its definition. */
 const initialVisibility = (): Record<string, boolean> =>
   Object.fromEntries(
-    WEATHER_LAYERS.map((layer) => [layer.id, layer.defaultVisible ?? false]),
+    RASTER_LAYERS.map((layer) => [layer.id, layer.defaultVisible ?? false]),
   )
 
 export function MapSettingsProvider({ children }: { children: ReactNode }) {

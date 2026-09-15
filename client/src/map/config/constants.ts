@@ -48,6 +48,42 @@ export const SOURCE_IDS = {
 } as const
 
 export const LAYER_IDS = {
+  /**
+   * The flat, opaque colour under everything, and the only thing beneath the
+   * forecast surface. See utils/basemapStyle → composeGround.
+   */
+  ground: 'klima-ground',
+  /**
+   * The continuous field under everything — the interpolated surface the
+   * selected product was gridded on before it was averaged into provinces.
+   *
+   * Not a MapLibre layer: it is a deck.gl layer interleaved into the style by
+   * layers/RasterOverlay, which is why nothing declares it as a <Layer>. The id
+   * is here anyway because it takes a place in LAYER_ORDER like any other.
+   */
+  raster: 'raster',
+  /**
+   * The landmass: the basemap's own ground and every land layer behind it,
+   * dimmed to a tenth and drawn over the raster.
+   *
+   * The id belongs to the base coat — the basemap's `background`, renamed —
+   * and the rest of the tier follows it in the style. The raster names this as
+   * its `beforeId`, which is what puts the forecast under the country.
+   *
+   * It is deliberately **not** administrative. Nothing about it is sourced from
+   * Martin, so a product that draws no boundaries at all — a seasonal
+   * temperature variable, for one — still has a country under it. See
+   * utils/basemapStyle → composeGround.
+   */
+  land: 'klima-land',
+  /**
+   * The sea, painted opaque in the ground colour over the land tier.
+   *
+   * A mask, not a colour: it is what takes the land tint and the raster back
+   * off the water, and so the thing that makes the layer above a landmass
+   * rather than a wash over the whole viewport.
+   */
+  sea: 'klima-sea',
   boundariesParentFill: 'boundaries-parent-fill',
   boundariesParentLine: 'boundaries-parent-line',
   boundariesChildFill: 'boundaries-child-fill',

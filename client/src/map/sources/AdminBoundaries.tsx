@@ -61,6 +61,19 @@ type VectorSourceWithEncoding = VectorSourceSpecification & {
 const BOUNDARY_INK = "#ffffff";
 
 /**
+ * The landmass is not here.
+ *
+ * It was, briefly, as an unfiltered fill on the overview tier — the union of
+ * the regions *is* the country, and it was the only land polygon on hand. It
+ * moved to the basemap (utils/basemapStyle → composeGround) because a landmass
+ * sourced from administrative geometry only exists while administrative
+ * geometry is mounted, and this component is about to stop being unconditional:
+ * a product that publishes no boundaries at all would have taken the country
+ * down with them. Nothing in this file should be load-bearing for the map's
+ * ground again.
+ */
+
+/**
  * Where everything that draws data inserts itself: under the label tier.
  *
  * A fixed seam in the style rather than a mount-order convention, so a raster

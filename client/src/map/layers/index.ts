@@ -18,13 +18,35 @@ import { LAYER_IDS } from '@/map/config/constants'
  * beforeId and stays on top. Within each band, mount order still decides.
  */
 export const LAYER_ORDER: string[] = [
-  // --- under the seam: beforeId={LAYER_IDS.labelAnchor} ---
+  // --- the basemap's own, built by utils/basemapStyle → composeGround ---
+  //
+  // Not mounted by any component: these are in the style before the first
+  // <Layer> exists, which is what lets the raster name one of them as a
+  // beforeId. Listed anyway, because this array is where the map's paint order
+  // is read, and an order missing its bottom three entries is not one.
+  LAYER_IDS.ground,
 
-  // Weather rasters and choropleth fills belong here, *below* the boundary
-  // strokes, so administrative edges stay readable on top of data. A
-  // choropleth of the product's own resolution paints on the child tier, which
-  // is the tier the API publishes at; anything aggregated up to the parent
-  // paints on the parent fill.
+  // The raster surface is the bottom of the data band, *below* the boundary
+  // strokes, so administrative edges stay readable on top of it. It is the one
+  // entry here that is not a MapLibre layer — deck.gl interleaves it into the
+  // style, and it takes its place by naming the land layer below as its
+  // beforeId rather than by mount order. See layers/RasterOverlay.
+  LAYER_IDS.raster,
+
+  // The country, over the surface rather than under it. This is the one place
+  // the order is load-bearing rather than conventional: the land is painted at
+  // a tenth, so what it sits above is what it tints. Below the raster it would
+  // tint the ground instead and isolate nothing.
+  LAYER_IDS.land,
+  // …and the mask that makes it a landmass, by putting the sea back to bare
+  // ground. Everything below this line is visible on land only.
+  LAYER_IDS.sea,
+
+  // --- ours, under the seam: beforeId={LAYER_IDS.labelAnchor} ---
+
+  // Choropleth fills belong here too. A choropleth of the product's own
+  // resolution paints on the child tier, which is the tier the API publishes
+  // at; anything aggregated up to the parent paints on the parent fill.
   LAYER_IDS.boundariesParentFill,
   LAYER_IDS.boundariesParentLine,
   // The revealed tier draws over its parent's stroke on purpose: it is the
@@ -53,15 +75,15 @@ export const LAYER_ORDER: string[] = [
 ]
 
 /**
- * A weather overlay the user can switch on.
+ * A raster overlay the user can switch on.
  *
  * Empty for now by design — the app ships with the basemap and administrative
  * boundaries only. This type is the contract the first real overlay implements,
- * and the layer panel already renders whatever appears in WEATHER_LAYERS, so
+ * and the layer panel already renders whatever appears in RASTER_LAYERS, so
  * adding one is a matter of pushing a definition here plus the <Source> that
  * draws it.
  */
-export type WeatherLayerDefinition = {
+export type RasterLayerDefinition = {
   /** Stable id; also the visibility key in map settings. */
   id: string
   /** Shown in the layer panel. */
@@ -72,4 +94,12 @@ export type WeatherLayerDefinition = {
   defaultVisible?: boolean
 }
 
-export const WEATHER_LAYERS: WeatherLayerDefinition[] = []
+export const RASTER_LAYERS: RasterLayerDefinition[] = [
+  {
+    id: LAYER_IDS.raster,
+    label: 'Forecast surface',
+    description:
+      'The interpolated field behind the provincial figures, as published.',
+    defaultVisible: true,
+  },
+]

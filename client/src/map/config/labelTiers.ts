@@ -116,7 +116,7 @@ export type PlaceTier = (typeof PLACE_TIER_ORDER)[number];
  * sits right beside a province name, the two are different inks rather than two
  * steps of one.
  */
-export const PLACE_INK = '#54524E'
+export const PLACE_INK = "#89857E";
 
 /**
  * Size alone, descending with the size of the thing named.
@@ -149,7 +149,7 @@ export const PLACE_TIERS: Record<PlaceTier, SizeRamp> = {
   locality: [8, 9, 10.5],
   /** OSM `neighbourhood`, `quarter` and `isolated_dwelling`: barangay scale. */
   micro: [7.5, 8.5, 10],
-}
+};
 
 /**
  * Which tier an OpenStreetMap `place` class is labelled at.
@@ -190,7 +190,7 @@ const FALLBACK_TIER: PlaceTier = "micro";
  * One face because the two bands already carry the hierarchy in colour and size
  * — adding weight to it would say the same thing a third time and less clearly.
  * Bold rather than regular because the bottom of the place band is small and
- * dark over a basemap that will eventually have a weather raster under it, and
+ * dark over a basemap that will eventually have a raster under it, and
  * regular does not survive that.
  *
  * Case is the other half of "one system": the basemap ships every place label
