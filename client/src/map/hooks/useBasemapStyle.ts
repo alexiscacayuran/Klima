@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { StyleSpecification } from 'maplibre-gl'
-import { BASEMAPS, styleAssets } from '@/map/config/styles'
+import { BASEMAPS, GROUND, styleAssets } from '@/map/config/styles'
 import type { BasemapId } from '@/map/config/styles'
-import { adoptBasemapLabels, withMartinAssets } from '@/map/utils/basemapStyle'
+import {
+  adoptBasemapLabels,
+  composeGround,
+  withMartinAssets,
+} from '@/map/utils/basemapStyle'
 
 /**
  * Loads a basemap style, keeps its place labels and drops the rest of its
@@ -33,7 +37,18 @@ export function useBasemapStyle(id: BasemapId): StyleSpecification | undefined {
         return response.json() as Promise<StyleSpecification>
       })
       .then((loaded) =>
-        setStyle(withMartinAssets(adoptBasemapLabels(loaded), styleAssets())),
+        setStyle(
+          withMartinAssets(
+            // composeGround first, and not only by preference. It keys on
+            // layer type, so running it after adoptBasemapLabels would find the
+            // hidden LABEL_ANCHOR — a background layer — and rename it to the
+            // land, which is the one id the raster inserts against. It also
+            // strips the `fill-pattern` that withMartinAssets would otherwise
+            // leave pointing at a sprite sheet that no longer exists.
+            adoptBasemapLabels(composeGround(loaded, GROUND[id])),
+            styleAssets(),
+          ),
+        ),
       )
       .catch((error: unknown) => {
         // An abort is the expected path when the id changes mid-flight.

@@ -39,6 +39,44 @@ server {
         add_header Cache-Control "public, max-age=3600";
     }
 
+    # The raster surfaces, from the CIS stack's MinIO. Same shape as /tiles/
+    # above and for the same reason — proxying here is what makes the origin
+    # same-origin in production, so the built bundle carries no backend host.
+    #
+    # config/rasters.ts defaults VITE_RASTER_URL to "/rasters" in a production
+    # build, so this location and that default are one contract. The bucket is
+    # NOT baked into RASTER_UPSTREAM: the app sends it as the first path segment
+    # ("/rasters/seasonal-forecast/processed/raster/...") because the bucket
+    # belongs to the product, not to the deployment, and seasonal is not
+    # expected to be the only product publishing rasters. Hence the trailing
+    # slash on proxy_pass, as on /tiles/ — the "/rasters" prefix is stripped and
+    # everything after it survives the hop.
+    #
+    # The extension must survive too. weatherlayers-gl picks its decoder by
+    # substring on the URL and falls through to GeoTIFF for anything that is not
+    # a .webp/.png/.jpg, so this must stay a path proxy and never become a REST
+    # wrapper (docs/raster-layers.md §7).
+    #
+    # WARNING: this block is only half a contract. Anonymous read on
+    # processed/raster/** comes from a `minio-anonymous` service in the CIS
+    # repo's compose.dev.yaml that has NO production counterpart, so a deployed
+    # stack answers 403 here until CIS publishes a policy or this proxy is given
+    # credentials of its own. Do not ship a build whose raster URL points
+    # straight at a MinIO port instead.
+    location /rasters/ {
+        proxy_pass         ${RASTER_UPSTREAM}/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # One image per forecast month, replaced only by a new issuance under a
+        # new key, so the object at a given key never changes.
+        expires 1h;
+        add_header Cache-Control "public, max-age=3600";
+    }
+
     # The CIS JSON API. Proxied for a stronger reason than the tiles above:
     # Martin sets its own CORS headers and would work cross-origin, while the
     # Express app sets none at all, so the API *must* be same-origin in every

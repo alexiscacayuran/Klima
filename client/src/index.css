@@ -154,8 +154,12 @@
    --------------------------------------------------------------------------- */
 
 @theme inline {
-  --font-cis: 'IBM Plex Sans Variable', 'IBM Plex Sans', system-ui, sans-serif;
-  --font-cis-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* Noto Sans, not the CIS system's IBM Plex: the chrome floats on the map and
+     the map's labels are Martin's Noto Sans glyphs (map/config/styles.ts
+     FONTS), so the two now set the same names in the same typeface. Faces are
+     imported in main.tsx; the -mono stack carries measured values and IDs. */
+  --font-cis: 'Noto Sans Variable', 'Noto Sans', system-ui, sans-serif;
+  --font-cis-mono: 'Noto Sans Mono Variable', 'Noto Sans Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Azure, the one accent. The -soft/-medium/-strong steps are *fills*; the
      text colour that reads on them is --color-fg-brand-strong, which is a

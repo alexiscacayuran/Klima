@@ -31,7 +31,7 @@ export type MapSettings = {
   showBoundaries: boolean
   setShowBoundaries: (visible: boolean) => void
 
-  /** Visibility per WEATHER_LAYERS id. Absent key means hidden. */
+  /** Visibility per RASTER_LAYERS id. Absent key means hidden. */
   visibleLayers: Readonly<Record<string, boolean>>
   toggleLayer: (id: string, visible: boolean) => void
 }

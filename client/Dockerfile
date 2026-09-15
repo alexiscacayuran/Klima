@@ -31,6 +31,16 @@ ENV TILES_UPSTREAM=http://host.docker.internal:3001
 # it at /api/v1.
 ENV API_UPSTREAM=http://host.docker.internal
 
+# Where MinIO is, as reached from *this container*, same reasoning as the two
+# above. The ORIGIN ONLY, with no bucket: the app sends the bucket as the first
+# path segment after /rasters/, because the bucket belongs to the product rather
+# than to the deployment (see nginx.conf.template and map/config/rasters.ts).
+#
+# A default is mandatory, not tidiness: envsubst only substitutes variables that
+# exist, so an undefined one would leave `${RASTER_UPSTREAM}` in the config
+# verbatim and nginx would refuse to start on the unknown variable.
+ENV RASTER_UPSTREAM=http://host.docker.internal:9000
+
 # The CIS bearer token, injected into every proxied /api/ request by
 # nginx.conf.template. Empty by default for two reasons: a token belongs to a
 # deployment rather than to an image, and envsubst only substitutes variables

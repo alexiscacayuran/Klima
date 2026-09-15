@@ -1,6 +1,6 @@
 # Klima
 
-Philippine weather map — a MapLibre client in [client/](client/), containerized
+Philippine climate map — a MapLibre client in [client/](client/), containerized
 with Docker.
 
 ## Architecture
@@ -12,6 +12,8 @@ The map is the app; everything else is chrome around it.
 | Rendering | maplibre-gl | pinned to 5.x — see below |
 | React binding | @vis.gl/react-maplibre | [client/src/map/](client/src/map/) |
 | Vector tiles | Martin, **external** | [docs/vector-tiles.md](docs/vector-tiles.md) |
+| Province numbers | CIS Express API, **external** | [docs/cis-api.md](docs/cis-api.md) |
+| Raster surfaces | MinIO + deck.gl, **external** | [docs/raster-layers.md](docs/raster-layers.md) |
 | Basemap | OpenFreeMap (no key) | [map/config/styles.ts](client/src/map/config/styles.ts) |
 | UI | shadcn/ui (Base UI, `base-nova`) | [client/src/components/ui/](client/src/components/ui/) |
 
@@ -47,7 +49,7 @@ client/src/map/
 ├── config/              ids, Martin endpoints, basemaps, initial camera
 ├── state/               settings shared across the <Map> boundary (context)
 ├── sources/             one component per Martin source
-├── layers/              LAYER_ORDER (paint order) + WEATHER_LAYERS registry
+├── layers/              LAYER_ORDER (paint order) + RASTER_LAYERS registry
 ├── hooks/               map instance, events, sprite images, catalog
 ├── interactions/        camera behaviour (elastic bounds)
 ├── controls/            toolbar + native MapLibre controls
@@ -65,13 +67,24 @@ Two rules carry most of the weight:
   which is spread across components and easy to get wrong; that array is the one
   place the intended order is written down.
 
-### Adding a weather overlay
+### Adding an overlay
 
-The scaffold ships with the basemap and admin boundaries only. A new overlay is
-three edits: a `<Source>` in `map/sources/`, mounted in `DataLayers` at the right
-position, its ids added to `config/constants.ts` and `layers/index.ts`, and a
-`WeatherLayerDefinition` pushed to `WEATHER_LAYERS` — the layer panel renders
-whatever is in that registry, so no UI change is needed.
+A vector overlay is three edits: a `<Source>` in `map/sources/`, mounted in
+`DataLayers` at the right position, its ids added to `config/constants.ts` and
+`layers/index.ts`, and a `RasterLayerDefinition` pushed to `RASTER_LAYERS` —
+the layer panel renders whatever is in that registry, so no UI change is needed.
+
+A **raster** overlay is usually not a new component at all. `map/layers/`
+`RasterOverlay` already hosts the app's one deck.gl overlay and draws whichever
+surface the selection resolves to, so a product that publishes rasters needs two
+entries in [map/config/rasters.ts](client/src/map/config/rasters.ts) — a
+`RasterSource` naming its bucket and key layout, and a `RasterVariant` per
+selectable layer — and nothing else. Note that `RasterOverlay` mounts *last* in
+`DataLayers` while painting *first*: it is interleaved into the style by
+`beforeId`, and that target layer has to exist before it can sit in front of it.
+
+There is exactly one `MapboxOverlay` in the app, deliberately. Two would fight
+over the WebGL context.
 
 ### maplibre-gl is pinned to 5.x
 

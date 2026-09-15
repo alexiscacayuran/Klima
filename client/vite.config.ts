@@ -26,6 +26,12 @@ export default defineConfig(({ mode }) => {
       // Mirrors the "paths" entry in tsconfig.app.json.
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
+        // weatherlayers-gl reaches for geotiff through a dynamic import inside a
+        // try/catch, as an optional peer. We only ever load .webp, so that
+        // branch never runs — but Rollup still has to resolve the specifier or
+        // the build fails, and the package is deliberately not installed. See
+        // src/shims/geotiff.ts.
+        geotiff: fileURLToPath(new URL("./src/shims/geotiff.ts", import.meta.url)),
       },
     },
     server: {
