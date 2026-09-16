@@ -89,11 +89,11 @@ their own. Budget the whole session, not each product.
 is five full national refreshes per 15 minutes — enough, but not enough to fan
 out on every pan. Fetch nationally once, cache, and filter client-side.
 
-**The station layer no longer fits an `apiuser` token.** Building it is 1 + N =
-109 requests (see §5), which alone exceeds 100 and now leaves nothing for the
-data. Either use the `superuser` token — the account the rate limiter is
-explicitly shaped for, at 10 000 per 15 min — or build the station GeoJSON once
-and cache it, which is the standing advice in §5 regardless.
+**The station layer is one request.** It used to be 1 + N = 109, because
+`/stations` published no coordinates and each one had to be fetched by id; that
+alone exceeded the `apiuser` budget and left nothing for the data. `/stations`
+now carries `lat` and `long` (see §5), so the whole layer costs a single
+request and the rate limit stops being a consideration for it.
 
 ---
 
@@ -645,18 +645,19 @@ The value lands under a key **named after `rankBy`**, so read it as
 
 ```json
 [{ "stationId": 21, "station": "Ambulong, Tanauan, Batangas",
+   "lat": 14.0878, "long": 121.0672,
    "stationMeta": "/api/v1/stations/21" }]
 ```
 
-**No coordinates.** Building a station layer therefore costs 1 + N requests —
-109 unfiltered, which the nginx `api` zone (10 r/s, burst 20) will throttle. Fetch
-once at startup, batch in chunks of ~10, and cache the assembled GeoJSON in
-`localStorage`; station metadata is effectively static.
+**Coordinates are included**, so this one response is a whole station layer —
+`?product=seasonal` and plot what comes back. This is a change: the endpoint
+previously returned identity only, which made the layer 1 + N = 109 requests and
+forced a `localStorage` cache to exist at all. Neither is needed now.
 
-Now that these routes authenticate, those 109 requests also come out of the
-account's own 100-per-15-min budget rather than a separate IP-keyed one, so on an
-`apiuser` token the layer cannot be built in a single window at all — see §1.
-Caching stops being an optimization here and becomes the only way it works.
+`lat`/`long` are the only geometry here. Everything else about a station —
+`locationId`, `elevation`, `type`, the normals — is still one-at-a-time from
+`/stations/:id` below, so a layer that needs to *join* stations to boundaries
+still pays per station. A layer that only needs to draw them does not.
 
 `stationMeta` is a **relative path whose prefix is set by the CIS server's
 `NODE_ENV`** — `/api/v1/...` in development, `/v1/cis/...` otherwise. It resolves
@@ -731,7 +732,7 @@ Worth knowing before designing around something that is not there.
 |---|---|
 | **Raster / COG serving** | Still nothing *in this API* — no presigned URLs, no titiler. But the rasters are readable: MinIO serves the WebPs directly over an anonymous prefix in the dev stack, which is how the map paints them. See [raster-layers.md](raster-layers.md); production is still unsolved |
 | **GeoJSON** | No geometry from the API at all. Geometry is tiles-only |
-| **Station coordinates in bulk** | 1 + N as described in §5 |
+| **Station metadata in bulk** | `/stations` carries identity and coordinates; `locationId`, `elevation`, `type` and the normals are 1 + N from `/stations/:id` (§5) |
 | **National / bbox / viewport queries** | Fan out over the 18 regions |
 | **Live updates** | The SSE channel under `/progress/:channelId` is admin-scoped import progress, not data push. Poll `/products` — `nextUpdateAt` for when the next issuance is due, `latestData` for what has actually landed |
 | **Consistent envelopes** | Some endpoints return an object, some an array, and the PSGC field is named differently per product. Normalize once, at the fetch boundary |

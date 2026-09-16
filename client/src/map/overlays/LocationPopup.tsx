@@ -1,6 +1,8 @@
 import { Marker, Popup } from "@vis.gl/react-maplibre";
 import { ChevronDown } from "lucide-react";
 import { seasonalMonth } from "@/api/seasonal";
+import type { SymbologyMode } from "@/map/config/colorScales";
+import { symbologyModeFor } from "@/map/config/rasters";
 import {
   formatSeasonalValue,
   seasonalReadingFor,
@@ -39,9 +41,12 @@ type Reading = {
    */
   label: string;
   /**
-   * The class's colour, when there is a value. The same ink the choropleth
-   * paints this province with, so the card and the map agree without the reader
-   * having to check the legend.
+   * The value's colour, when there is one — resolved through the mode the
+   * selected layer declares, so it is the ink the surface under this card is
+   * painting that number with and not merely the class it belongs to. Classed and
+   * interpolated agree only at the breaks; reading the class unconditionally
+   * would leave the card quoting a colour the map is not using anywhere for two
+   * thirds of every band.
    */
   color?: string;
 };
@@ -61,15 +66,23 @@ function readingFor(
   variable: string | null,
   forecast: SeasonalForecastState,
   date: string | null,
+  mode: SymbologyMode,
 ): Reading | null {
   if (forecast.status === "idle") return null;
 
-  // No entry for the selected layer: seasonal temperature is published per
-  // station, and the province endpoint this card reads carries rainfall only
-  // (see config/seasonalReadings). Said plainly, because the alternative is a
-  // dash the user cannot account for.
+  // Nothing this card can quote for the selected layer — either no reading at
+  // all, or one with no province field, which is seasonal temperature: it is
+  // published per station and the province endpoint this card reads carries
+  // rainfall only (see config/seasonalReadings). Said plainly, because the
+  // alternative is a dash the user cannot account for.
+  //
+  // Defensive rather than load-bearing today: a layer published only at
+  // stations declares no `boundaries` overlay, so there is nothing to pin and
+  // this card never mounts for one. That is a fact about the catalogue, which
+  // can change, and this is a card that quotes numbers under a place name — the
+  // wrong number here is the one failure worth ruling out twice.
   const reading = seasonalReadingFor(variable);
-  if (!reading) {
+  if (!reading?.field) {
     return { value: NO_VALUE, label: "Published per station only" };
   }
 
@@ -93,16 +106,21 @@ function readingFor(
   // still names the quantity — the reading is missing, not the subject.
   if (value === null) return { value: NO_VALUE, label: reading.label };
 
-  // Classified on the raw number, printed from it separately: the class is what
-  // the map is painting, and it has to be the class of the value CIS published
-  // rather than of the rounded one this card shows.
+  // Both read off the raw number, and printed from it separately: the class and
+  // the colour have to be the ones the map gives the value CIS published rather
+  // than the rounded one this card shows.
+  //
+  // The two come from different calls on purpose. The *name* of a reading is
+  // always its class — "Wet month" is a band, and there is no such thing as an
+  // interpolated one — while the *colour* is whatever the map is painting,
+  // which under a ramp sits between two published hexes.
   const band = reading.scale.classAt(value);
 
   return {
     value: formatSeasonalValue(reading, value),
     unit: reading.unit,
     label: band.label,
-    color: band.color,
+    color: reading.scale.colorFor(value, mode),
   };
 }
 
@@ -130,7 +148,7 @@ export function LocationPopup() {
   // Above the early return, as hooks have to be. It keys on the pin itself, so
   // with none it fetches nothing and reports `idle`.
   const forecast = useSeasonalForecast();
-  const reading = readingFor(variable, forecast, date);
+  const reading = readingFor(variable, forecast, date, symbologyModeFor(variable));
 
   // No pin, nothing to point at. Unmounting rather than hiding is what keeps
   // MapLibre from holding a popup element over the canvas that swallows clicks.
@@ -255,8 +273,10 @@ export function LocationPopup() {
                       in one. */}
                   <p className="flex items-center gap-2">
                     {/* The value's place on the layer's symbology, in the ink
-                        the choropleth will paint this province with (see
-                        config/colorScales). A swatch rather than colouring the
+                        the map is painting that value with — classed or
+                        interpolated, whichever the layer declares (see
+                        config/rasters `symbologyModeFor`). A swatch rather
+                        than colouring the
                         digits: this scale runs from #e1e1e1 to #000000, so half
                         of it is unreadable as text on one theme or the other,
                         and a number that changes colour with its own value

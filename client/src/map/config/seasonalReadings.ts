@@ -1,8 +1,9 @@
-import type { SeasonalMonth } from '@/api/seasonal'
+import type { SeasonalMonth, SeasonalStationMonth } from '@/api/seasonal'
 import type { ColorScale } from './colorScales'
 import {
   RAINFALL_FORECAST_SCALE,
   RAINFALL_PERCENT_OF_NORMAL_SCALE,
+  SEASONAL_TEMPERATURE_SCALE,
 } from './colorScales'
 import { parseVariableKey } from './products'
 
@@ -31,9 +32,42 @@ export type SeasonalValueField = {
   [K in keyof SeasonalMonth]: SeasonalMonth[K] extends number | null ? K : never
 }[keyof SeasonalMonth]
 
+/**
+ * The same, for the station row.
+ *
+ * A separate type rather than a widening of the one above, because the two
+ * shapes overlap without nesting: the station row carries `tmean` and the
+ * terciles that no province row has, and the province row carries `rainfallMax`
+ * and `rainfallMin` that no station row has. Deriving one from the other would
+ * make a field selectable at a resolution that does not publish it.
+ */
+export type SeasonalStationValueField = {
+  [K in keyof SeasonalStationMonth]: SeasonalStationMonth[K] extends
+    | number
+    | null
+    ? K
+    : never
+}[keyof SeasonalStationMonth]
+
 export type SeasonalReading = {
-  /** The one field this layer reads. */
-  field: SeasonalValueField
+  /**
+   * The field this layer reads on a **province** row, when the province
+   * endpoint publishes the quantity at all.
+   *
+   * Absent for a quantity CIS publishes only at stations, which is a real state
+   * rather than a gap to fill: a layer with no province field paints no
+   * choropleth and its popup says so, instead of quoting a station's number
+   * under a province's name.
+   */
+  field?: SeasonalValueField
+  /**
+   * The field this layer reads on a **station** row.
+   *
+   * Usually the same quantity as `field` under the same name — the station row
+   * is the same issuance at points — and the only field for `temperature`.
+   * Absent for a quantity stations do not report.
+   */
+  stationField?: SeasonalStationValueField
   /** What the number is, for a reader. */
   label: string
   /**
@@ -72,6 +106,7 @@ export type SeasonalReading = {
 const SEASONAL_READINGS: Record<string, SeasonalReading> = {
   'rainfall:forecast': {
     field: 'rainfallMean',
+    stationField: 'rainfallMean',
     label: 'Forecast rainfall',
     unit: 'mm',
     decimals: 0,
@@ -79,15 +114,32 @@ const SEASONAL_READINGS: Record<string, SeasonalReading> = {
   },
   'rainfall:percent-of-normal': {
     field: 'rainfallPn',
+    stationField: 'rainfallPn',
     label: 'Percent of normal',
     suffix: '%',
     decimals: 0,
     scale: RAINFALL_PERCENT_OF_NORMAL_SCALE,
   },
-  // No entry for `temperature`: the province endpoint carries rainfall only,
-  // and the seasonal temperature CIS publishes is per station (docs/cis-api.md
-  // §5). An absent entry is what tells a reader that, and inventing one from
-  // the station endpoint would put a point reading under a province's name.
+  // Station-only, and the reason the two halves of a reading are separate
+  // fields. The province endpoint carries rainfall and nothing else, so there
+  // is no `field` to give this and a choropleth of it cannot exist; the seasonal
+  // temperature CIS publishes is per station (docs/cis-api.md §5). The entry
+  // used to be absent entirely, which said the same thing when nothing rendered
+  // points — now that something does, saying it as a missing `field` is what
+  // keeps the pill readable and the popup honest.
+  //
+  // One decimal, against zero for both rainfall fields. Not an inconsistency:
+  // a monthly rainfall total forecast six months out has three significant
+  // figures at best, while the national spread of `tmean` is 18–30 °C, so a
+  // whole degree is a tenth of the entire range and rounding to it would merge
+  // bands the scale distinguishes.
+  temperature: {
+    stationField: 'tmean',
+    label: 'Mean temperature',
+    unit: '°C',
+    decimals: 1,
+    scale: SEASONAL_TEMPERATURE_SCALE,
+  },
 }
 
 /** The reading a selected layer is about, or null if it has none. */
@@ -119,9 +171,37 @@ export function seasonalValue(
   reading: SeasonalReading,
   month: SeasonalMonth,
 ): number | null {
-  const value = month[reading.field]
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
+  if (!reading.field) return null
+  return finite(month[reading.field])
 }
+
+/**
+ * The same, read off a station row.
+ *
+ * Separate from `seasonalValue` rather than generic over the two shapes: the
+ * field names are drawn from different unions precisely so a province field
+ * cannot be read from a station row, and a function taking either would give
+ * that back.
+ */
+export function seasonalStationValue(
+  reading: SeasonalReading,
+  month: SeasonalStationMonth,
+): number | null {
+  if (!reading.stationField) return null
+  return finite(month[reading.stationField])
+}
+
+/**
+ * A published number, or null for anything that is not one.
+ *
+ * Nulls are the response's own answer for a month with no stored aggregate, and
+ * are returned rather than coerced to zero so the caller says "no value" in
+ * words — a different thing from "0 mm". NaN and Infinity are folded in with
+ * them: neither should reach a scale, which would classify them into the first
+ * band and print a swatch for a value that does not exist.
+ */
+const finite = (value: number | null | undefined): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null
 
 /**
  * The value as printed.

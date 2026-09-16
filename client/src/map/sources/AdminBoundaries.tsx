@@ -12,7 +12,7 @@ import {
   USE_MLT,
   tileUrl,
 } from "@/map/config/martin";
-import { spatialLevelForVariable } from "@/map/config/products";
+import { hasOverlay, spatialLevelForVariable } from "@/map/config/products";
 import {
   ADMIN_TIERS,
   LABEL_FONT,
@@ -152,7 +152,16 @@ export function AdminBoundaries() {
   // rather than shouting at the same size. See config/labelTiers.
   const labelTier = tierForAdminLevel(spatialLevel);
 
-  useBoundaryFocus();
+  // Whether the *product* draws boundaries at all, as opposed to whether the
+  // user has switched the ones it draws off. Two different questions with the
+  // same visual answer, kept apart because only one of them also means there is
+  // nothing to point at: a seasonal temperature layer publishes no polygon
+  // values, so there is no unit a click could resolve to and no reading a pin
+  // could show. `showBoundaries` is a preference about a map that still works.
+  const drawsBoundaries = hasOverlay(variable, "boundaries");
+  const boundariesVisible = drawsBoundaries && showBoundaries;
+
+  useBoundaryFocus(drawsBoundaries);
   useResetOnLevelChange(levels);
 
   const focused = focusedParent(hover, pinned);
@@ -190,7 +199,7 @@ export function AdminBoundaries() {
           type="fill"
           source-layer={BOUNDARIES_SOURCE_LAYER}
           beforeId={BELOW_LABELS}
-          layout={{ visibility: showBoundaries ? "visible" : "none" }}
+          layout={{ visibility: boundariesVisible ? "visible" : "none" }}
           paint={{
             "fill-color": BOUNDARY_INK,
             "fill-opacity": [
@@ -207,7 +216,7 @@ export function AdminBoundaries() {
           source-layer={BOUNDARIES_SOURCE_LAYER}
           beforeId={BELOW_LABELS}
           layout={{
-            visibility: showBoundaries ? "visible" : "none",
+            visibility: boundariesVisible ? "visible" : "none",
             "line-join": "round",
           }}
           // The carve itself: the focused unit's outline is withheld so the
@@ -272,7 +281,7 @@ export function AdminBoundaries() {
             type="fill"
             source-layer={BOUNDARIES_SOURCE_LAYER}
             beforeId={BELOW_LABELS}
-            layout={{ visibility: showBoundaries ? "visible" : "none" }}
+            layout={{ visibility: boundariesVisible ? "visible" : "none" }}
             paint={{
               "fill-color": BOUNDARY_INK,
               "fill-opacity": [
@@ -293,7 +302,7 @@ export function AdminBoundaries() {
             source-layer={BOUNDARIES_SOURCE_LAYER}
             beforeId={BELOW_LABELS}
             layout={{
-              visibility: showBoundaries ? "visible" : "none",
+              visibility: boundariesVisible ? "visible" : "none",
               "line-join": "round",
             }}
             filter={["==", ["get", "parent_psgc"], focused ?? ""]}
@@ -350,6 +359,12 @@ export function AdminBoundaries() {
           id={LAYER_IDS.boundariesLabel}
           type="symbol"
           layout={{
+            // `showBoundaries`, not `boundariesVisible`: this tier survives a
+            // product that draws no boundaries. The fills and strokes are the
+            // product's data and leave with it, but the names are wayfinding —
+            // a station pill says what a place forecasts and nothing about
+            // *which* place, and a map of unlabelled points is a puzzle. The
+            // user's own toggle still turns them off.
             visibility: showBoundaries ? "visible" : "none",
             "text-field": ["get", "name"],
             "text-font": LABEL_FONT,

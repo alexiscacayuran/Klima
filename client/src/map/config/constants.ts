@@ -45,6 +45,16 @@ export const SOURCE_IDS = {
    * utils/labelAnchors, which derives the points this carries.
    */
   boundaryLabels: 'boundary-labels',
+  /**
+   * Station points, clustered.
+   *
+   * GeoJSON rather than vector: there is no geometry in the CIS API and none in
+   * Martin for stations either, so the collection is assembled in the browser
+   * from `/stations` and handed over whole. The source exists to do the
+   * clustering — MapLibre's own, off one `cluster: true` — and is read back with
+   * `querySourceFeatures` rather than drawn; see overlays/StationMarkers.
+   */
+  stations: 'stations',
 } as const
 
 export const LAYER_IDS = {
@@ -102,6 +112,24 @@ export const LAYER_IDS = {
    * shape rather than to any source. See utils/basemapStyle.
    */
   labelAnchor: 'klima-label-anchor',
+  /**
+   * Not a layer anything draws either, and for a stranger reason than the seam
+   * above: it exists so that its *source* stays loaded.
+   *
+   * MapLibre recomputes, every frame, which sources are in use — a source no
+   * unhidden layer references has its ideal tile list emptied and loads nothing
+   * (style.ts `used`, tile_manager.ts `update`). `querySourceFeatures` then
+   * returns an empty array with no error, which is how a clustered source with
+   * no layers fails: silently, and looking exactly like "no data".
+   *
+   * So the station source carries this. `filter: false` rather than
+   * `visibility: 'none'` — the latter counts as hidden and would defeat the
+   * whole point, while a false filter leaves the layer visible to that
+   * bookkeeping and populates zero features into its bucket, so there is nothing
+   * to upload and nothing to draw. It must also carry no minzoom or maxzoom,
+   * which are the other half of `isHidden`.
+   */
+  stationPoints: 'station-points',
 } as const
 
 /**

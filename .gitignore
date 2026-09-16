@@ -81,3 +81,11 @@ package-lock.json
 # client/vite.config.ts and client/nginx.conf.template.
 .env
 .env.*
+
+# Playwright. The browsers live in ~/.cache/ms-playwright, not here; these are
+# only the per-run artefacts — reports, traces, and the screenshots the station
+# tests write on the way past.
+client/test-results/
+client/playwright-report/
+client/blob-report/
+client/e2e/__screenshots__/

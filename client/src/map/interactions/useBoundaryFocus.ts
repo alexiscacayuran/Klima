@@ -123,7 +123,16 @@ const HOVER_SETTLE_MS = 90
  * tracking off: it only queries per mousemove when a pointer handler is passed
  * to <Map>, so this hook's query is the only one per event.
  */
-export function useBoundaryFocus() {
+/**
+ * @param enabled Whether the selected layer draws boundaries at all. A layer
+ *   published only at stations has no polygon a click could resolve to, so the
+ *   whole interaction is off rather than merely finding nothing: a hit test
+ *   against layers that are hidden returns no features anyway, but it would
+ *   still set the cursor, still run on every mousemove, and still clear the pin
+ *   on a click over open water. Subscriptions stay mounted so the hook order
+ *   does not change with the selection; they simply return.
+ */
+export function useBoundaryFocus(enabled = true) {
   const map = useRawMap()
   const { setHover, setPinned, hover, pinned } = useSelection()
   /** The reading a countdown is running towards, if one is. */
@@ -183,7 +192,7 @@ export function useBoundaryFocus() {
   }
 
   useMapEvent('mousemove', (event) => {
-    if (!map) return
+    if (!map || !enabled) return
     const probed = probe(map, event.point)
 
     // An inline cursor on the canvas overrides MapLibre's own, which is CSS on
@@ -211,7 +220,7 @@ export function useBoundaryFocus() {
   })
 
   useMapEvent('click', (event) => {
-    if (!map) return
+    if (!map || !enabled) return
     // Deliberately a fresh hit test rather than the last hover: a click can
     // arrive from a touch or a keyboard-driven pointer that produced no
     // mousemove at all — and while a pin is held there is no hover to reuse.
@@ -258,8 +267,29 @@ export function useBoundaryFocus() {
   // flicker again in a different currency, and the same window absorbs it.
   useMapEvent('mouseout', () => {
     if (map) map.getCanvas().style.cursor = ''
+    if (!enabled) return
     report(NO_HOVER)
   })
+
+  /**
+   * A selection cannot outlive the layer that could produce it.
+   *
+   * Switching to a station-only product leaves whatever was pinned standing,
+   * and that pin would keep the boundary fills highlighting a province the map
+   * no longer draws — and keep LocationPopup quoting a province forecast for a
+   * quantity published only at stations. Cleared on the way out rather than
+   * guarded at each reader, for the same reason useResetOnLevelChange clears on
+   * a level change: the state is stale, not merely unused.
+   */
+  useEffect(() => {
+    if (enabled) return
+    setHover(NO_HOVER)
+    setPinned(null)
+    if (map) map.getCanvas().style.cursor = ''
+    // The two setters are `useState`'s own and therefore stable, so listing them
+    // costs nothing: this still runs only when the layer stops drawing
+    // boundaries, not on every selection change.
+  }, [enabled, map, setHover, setPinned])
 
   useEffect(() => {
     if (!map) return

@@ -3,10 +3,10 @@ import { apiGet } from './client'
 /**
  * The seasonal forecast — `GET /seasonal`.
  *
- * One issuance, six months ahead, published per province (docs/cis-api.md §5).
- * The station shape — richer, with temperature and terciles — is a different
- * endpoint at a different resolution; it belongs in this file too when
- * something renders points, and is deliberately not stubbed before then.
+ * One issuance, six months ahead, published at two resolutions: per province,
+ * and per station (docs/cis-api.md §5). Both are below — the province shape
+ * first, then the richer station one, which carries temperature and tercile
+ * probabilities the province rows have no room for.
  */
 
 /**
@@ -127,3 +127,146 @@ export const seasonalMonth = (
   stepId: string | null,
 ): SeasonalMonth | null =>
   province.months.find((month) => month.date === stepId) ?? null
+
+/**
+ * One forecast month at one station.
+ *
+ * The same issuance as SeasonalMonth above, at points rather than polygons, and
+ * a strict superset of it: everything the province row carries plus temperature,
+ * the tercile probabilities, and the 1991–2020 normals each value is read
+ * against.
+ *
+ * Two of these fields are the only seasonal temperature CIS publishes anywhere —
+ * the province endpoint carries rainfall and nothing else — which is what makes
+ * this shape worth rendering rather than a richer version of something already
+ * on the map.
+ *
+ * Every value is nullable and independently so. Stations report rainfall and
+ * temperature through different instruments, so a station with temperatures and
+ * null rainfall is normal rather than broken (docs/cis-api.md §5); NAIA is one.
+ */
+export type SeasonalStationMonth = {
+  /** The row's own id — a bigint, so a string, and *not* a station id. */
+  id: string
+  /** The forecast month as `YYYY-MM`, matching the timeline's step id. */
+  date: string
+  /** The forecast total, in mm. */
+  rainfallMean: number | null
+  /** Percent of normal, where 100 is normal. */
+  rainfallPn: number | null
+  /**
+   * Above / near / below-normal tercile probabilities, summing to ~100.
+   *
+   * A different kind of statement from the two fields above: those are one
+   * predicted number, these are the model's confidence spread across three
+   * outcomes. Nothing maps them yet — a single pill cannot say three things —
+   * but they are the substance of a station detail card.
+   */
+  rainfallProbAn: number | null
+  rainfallProbNn: number | null
+  rainfallProbBn: number | null
+  tmax: number | null
+  tmin: number | null
+  /** Mean temperature in °C — the station layer's temperature reading. */
+  tmean: number | null
+  /** Signed departure from normal, in °C. Whether `tmean` is *unusual*. */
+  tmeanAnomaly: number | null
+  tmaxLow: number | null
+  tmaxHigh: number | null
+  tminLow: number | null
+  tminHigh: number | null
+  normalRainfall: number | null
+  normalTmax: number | null
+  normalTmin: number | null
+}
+
+/**
+ * A station's whole issuance.
+ *
+ * `stationId` and `months`, against the wire's `id` and `data` — renamed here
+ * for the reason SeasonalProvince is, with one addition that matters more: the
+ * field called `id` on this endpoint is a **station id**, a number, while the
+ * field called `id` on the province endpoint is a PSGC string (docs/cis-api.md
+ * §3). Naming it `stationId` is what stops the two being compared.
+ */
+export type SeasonalStation = {
+  /** Numeric, and joins to `Station.id` from api/stations — never to a PSGC. */
+  stationId: number
+  name: string
+  /** ISO with an explicit +08:00 offset — safe to hand to `new Date`. */
+  issuedAt: string
+  /** The issuance's months, earliest first. */
+  months: SeasonalStationMonth[]
+}
+
+/** The wire shape, before the renaming above. */
+type SeasonalStationRow = {
+  id: number
+  station: string
+  stationMeta: string
+  issuedAt: string
+  data: SeasonalStationMonth[]
+}
+
+const toSeasonalStation = (row: SeasonalStationRow): SeasonalStation => ({
+  stationId: row.id,
+  name: row.station,
+  issuedAt: row.issuedAt,
+  months: row.data,
+})
+
+/**
+ * Every seasonal station inside a location — an **array**.
+ *
+ * `spatialRes=station` switches `GET /seasonal` from province rows to station
+ * rows for the same resolved location, so one request answers for every station
+ * in a region. That is what makes a national station layer 18 requests rather
+ * than one per station, and it is why this exists alongside the single-station
+ * endpoint below rather than instead of it.
+ *
+ * Stations the issuance holds no rows for are dropped server-side, the same way
+ * provinces are, so an empty array means "resolved, nothing published".
+ */
+export async function fetchSeasonalStations(
+  psgc: string,
+  init?: RequestInit,
+): Promise<SeasonalStation[]> {
+  const rows = await apiGet<SeasonalStationRow[]>(
+    '/seasonal',
+    { location: psgc, spatialRes: 'station' },
+    init,
+  )
+  return rows.map(toSeasonalStation)
+}
+
+/**
+ * One station — `GET /seasonal/station`.
+ *
+ * The same object the array above is made of, in a different envelope: this
+ * endpoint returns a bare object rather than a one-element array
+ * (docs/cis-api.md §5). Normalising both through `toSeasonalStation` is what
+ * keeps that inconsistency from reaching anything that reads a forecast.
+ *
+ * Addressed by numeric id rather than by name. The endpoint also fuzzy-matches a
+ * station name, at a much looser threshold than locations use, and the map
+ * always has the id already — a name that matched some neighbouring station
+ * would be a wrong reading under the right label.
+ */
+export async function fetchSeasonalStation(
+  stationId: number,
+  init?: RequestInit,
+): Promise<SeasonalStation> {
+  const row = await apiGet<SeasonalStationRow>(
+    '/seasonal/station',
+    { station: stationId },
+    init,
+  )
+  return toSeasonalStation(row)
+}
+
+/** The month a timeline step names at a station, or null if it carries none. */
+export const seasonalStationMonth = (
+  station: SeasonalStation,
+  stepId: string | null,
+): SeasonalStationMonth | null =>
+  station.months.find((month) => month.date === stepId) ?? null
