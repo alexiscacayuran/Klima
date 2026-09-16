@@ -20,10 +20,30 @@ import type { AdminLevel } from "@/map/types/features";
  * their absence from the list would read as "PAGASA does not make this".
  */
 
+/**
+ * The things a selected layer can put on the map.
+ *
+ * A vocabulary rather than a set of booleans, because the interesting fact is
+ * the *combination*: a gridded surface under boundaries, the same plus station
+ * points, or points alone with nothing behind them. Each of those is a real
+ * published product shape, and spelling them as a list keeps a fourth from
+ * needing a fourth flag.
+ *
+ * No `choropleth` yet. Painting admin polygons from their own values — with no
+ * raster behind them — is the drought product's shape, and drought is not wired
+ * up; layers/index.ts already reserves the slot in LAYER_ORDER. Declaring the
+ * value before anything reads it would be config that does nothing, which is
+ * exactly what this registry avoids elsewhere.
+ */
+export const OVERLAYS = ["raster", "boundaries", "stations"] as const;
+export type Overlay = (typeof OVERLAYS)[number];
+
 export type ProductLayer = {
   /** Stable id, unique within its variable. */
   id: string;
   label: string;
+  /** What this layer draws; see the note on ProductDefinition.overlays. */
+  overlays?: readonly Overlay[];
 };
 
 export type ProductVariable = {
@@ -40,6 +60,8 @@ export type ProductVariable = {
    * the variable row itself the selection.
    */
   layers?: readonly ProductLayer[];
+  /** What this variable draws; see the note on ProductDefinition.overlays. */
+  overlays?: readonly Overlay[];
 };
 
 export type ProductDefinition = {
@@ -75,6 +97,24 @@ export type ProductDefinition = {
    * every request for the product to a dataset about something else.
    */
   cisProduct?: CisProductName;
+  /**
+   * What a selection draws — the surface, the boundaries, the station points,
+   * or some combination.
+   *
+   * Declarable at all three levels and resolved innermost-first, which is the
+   * opposite arrangement to `spatialLevel` above and for a reason. Resolution is
+   * a property of the *issuance*: it is published at one tier and every quantity
+   * in it shares that tier, so a variable cannot disagree with its product.
+   * Composition is not. One seasonal issuance publishes a gridded rainfall
+   * surface and nothing gridded for temperature at all, so two layers of one
+   * product genuinely draw different things, and the product has no single
+   * answer to give.
+   *
+   * Absent at every level falls back to DEFAULT_OVERLAYS rather than to nothing,
+   * because a product with no declaration is one nobody has got to yet — not one
+   * that has been decided to draw an empty map.
+   */
+  overlays?: readonly Overlay[];
   /** Empty or absent until CIS publishes a mappable layer for the product. */
   variables?: readonly ProductVariable[];
 };
@@ -92,8 +132,8 @@ export const PRODUCTS: readonly ProductDefinition[] = [
         label: "Rainfall",
         icon: CloudRain,
       },
-      // No layers: the province endpoint carries no temperature at all, and the
-      // when CIS publishes a second mappable one, not before.
+      // No layers: `/fiveday` publishes one rainfall reading per unit. Give it
+      // sub-layers when CIS publishes a second mappable one, not before.
     ],
   },
   { id: "s2s", label: "S2S Forecast" },
@@ -114,14 +154,33 @@ export const PRODUCTS: readonly ProductDefinition[] = [
         label: "Rainfall",
         icon: CloudRain,
         layers: [
-          { id: "forecast", label: "Forecast" },
-          { id: "percent-of-normal", label: "Percent of Normal" },
+          {
+            id: "forecast",
+            label: "Forecast",
+            overlays: ["raster", "boundaries", "stations"],
+          },
+          {
+            id: "percent-of-normal",
+            label: "Percent of Normal",
+            overlays: ["raster", "boundaries", "stations"],
+          },
         ],
       },
       // No layers: the province endpoint carries no temperature at all, and the
       // station shape publishes one seasonal temperature. Give it sub-layers
       // when CIS publishes a second mappable one, not before.
-      { id: "temperature", label: "Temperature", icon: Thermometer },
+      //
+      // Stations alone, and the only selection in the catalogue that draws no
+      // polygons: with nothing published per province there is nothing to paint
+      // them from, and drawing them anyway would offer a hit target that can
+      // never answer. The rail row is the leaf here, so the declaration sits on
+      // the variable.
+      {
+        id: "temperature",
+        label: "Temperature",
+        icon: Thermometer,
+        overlays: ["stations"],
+      },
     ],
   },
   { id: "enso", label: "El Niño / La Niña" },
@@ -179,6 +238,50 @@ export const parseVariableKey = (
 
 export const findProduct = (productId: string): ProductDefinition | undefined =>
   PRODUCTS.find((product) => product.id === productId);
+
+/**
+ * Boundaries, for a selection that has not declared what it draws.
+ *
+ * The frame rather than the data: boundaries are what every product in the
+ * catalogue has in common, and they are the tier a click resolves against, so a
+ * product nobody has configured yet still shows a map that can be pointed at.
+ * Defaulting to `raster` instead would promise a surface that mostly does not
+ * exist — only seasonal publishes one.
+ */
+export const DEFAULT_OVERLAYS: readonly Overlay[] = ["boundaries"];
+
+/**
+ * What a selected layer draws.
+ *
+ * Innermost declaration wins — layer, then variable, then product — so a product
+ * can state the shape its variables mostly share and one variable can disagree
+ * without restating the rest. Not merged across levels: a partial override would
+ * make removing an overlay impossible to express, and "stations only" is exactly
+ * that case.
+ */
+export function overlaysForVariable(key: string | null): readonly Overlay[] {
+  const parts = parseVariableKey(key);
+  if (!parts) return DEFAULT_OVERLAYS;
+
+  const product = findProduct(parts.productId);
+  const variable = product?.variables?.find(
+    (candidate) => candidate.id === parts.variableId,
+  );
+  const layer = parts.layerId
+    ? variable?.layers?.find((candidate) => candidate.id === parts.layerId)
+    : undefined;
+
+  return (
+    layer?.overlays ??
+    variable?.overlays ??
+    product?.overlays ??
+    DEFAULT_OVERLAYS
+  );
+}
+
+/** Whether a selected layer draws one particular overlay. */
+export const hasOverlay = (key: string | null, overlay: Overlay): boolean =>
+  overlaysForVariable(key).includes(overlay);
 
 /**
  * Provinces, for a product that has not declared its own resolution.

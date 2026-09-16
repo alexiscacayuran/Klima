@@ -4,6 +4,7 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { ImageType, RasterLayer } from 'weatherlayers-gl'
 
 import { LAYER_IDS } from '@/map/config/constants'
+import { hasOverlay } from '@/map/config/products'
 import {
   rasterPalette,
   rasterUrl,
@@ -39,6 +40,24 @@ import { useSelection } from '@/map/state/useSelection'
  * and every place name under the surface they are supposed to be read over.
  * Interleaved shares MapLibre's WebGL context and honours `beforeId`, which is
  * what lets the layer take the slot LAYER_ORDER reserves for it.
+ *
+ * ## Ramp or steps
+ *
+ * The palette is the only thing that decides how the quantised channel becomes
+ * colour, so switching between an interpolated ramp and flat classes is a
+ * palette swap and nothing else — no second layer, no restyle, no refetch. Both
+ * are built from one table in config/rasters (`rasterPalette`), and which one a
+ * surface gets is declared on its RasterVariant: the product says how its own
+ * field is meant to be read, and nothing on screen offers to overrule it.
+ *
+ * The popup's swatch and the station pills resolve the same declaration through
+ * `symbologyModeFor`, and colour their values with `ColorScale.colorFor`. That
+ * is what keeps the card honest: the swatch is the colour this palette gives
+ * the value the card quotes.
+ *
+ * What is *not* affected is `imageInterpolation`: the value field is still
+ * sampled smoothly, so step mode draws class boundaries as the contours they
+ * are rather than as the edges of the source grid's cells.
  *
  * ## One overlay, N layers
  *
@@ -88,7 +107,15 @@ export function RasterOverlay() {
   const { visibleLayers } = useMapSettings()
   const { steps } = useTimeline()
 
-  const variant = rasterVariantFor(variable)
+  // Two questions, and both have to say yes. `rasterVariantFor` answers whether
+  // CIS publishes a surface for this layer; the overlay declaration answers
+  // whether the layer is meant to *draw* one. They are usually the same answer
+  // and are not the same question — a published surface a product has chosen not
+  // to show is a real configuration, and the variant table is the wrong place to
+  // express it because it would mean deleting the URL layout to hide the image.
+  const variant = hasOverlay(variable, 'raster')
+    ? rasterVariantFor(variable)
+    : null
   const issuance = useIssuance(variant?.product)
   const issuedAt = issuance.status === 'ready' ? issuance.issuedAt : null
 
@@ -137,10 +164,13 @@ export function RasterOverlay() {
           // while older images keep the old range (docs/raster-layers.md §5).
           imageUnscale: surface.image.imageUnscale,
           bounds: surface.image.bounds,
-          // The surface's own variant, not the selected one — see the note on
-          // Surface. The same table the choropleth and the popup swatch read,
-          // so one value cannot be two colours. See config/rasters.ts.
-          palette: rasterPalette(surface.variant.scale),
+          // Both off the surface's own variant, not the selected one — see the
+          // note on Surface. The table is the one the popup swatch reads, so a
+          // value cannot be two colours, and the mode beside it is how that
+          // table is applied: flat within each class, or interpolated between
+          // the breaks. The variant states it, so a held image keeps the
+          // reading it was published under even mid-switch. See config/rasters.
+          palette: rasterPalette(surface.variant.scale, surface.variant.mode),
           opacity: surface.variant.opacity,
           // The slot LAYER_ORDER reserves: directly under the land, so the
           // country reads as a tint over the surface and the surface continues
@@ -163,7 +193,9 @@ export function RasterOverlay() {
  * images — which is the whole reason this runs through RasterLayer rather than
  * two stacked MapLibre layers cross-faded on opacity. A month at 60% of the way
  * to the next reads as a plausible rainfall field; the same two months blended
- * as colour reads as neither.
+ * as colour reads as neither. In step mode that shows as bands sweeping across
+ * the country rather than as a wash, because the interpolated value crosses the
+ * class boundaries on its way — which is the honest picture of what changes.
  *
  * Two things are deliberately not faded:
  *

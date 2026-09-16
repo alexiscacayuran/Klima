@@ -5,6 +5,7 @@ import { Map, MapProvider } from "@vis.gl/react-maplibre";
 import { TimelineBar } from "./controls/TimelineBar";
 import { TitleSearchBar } from "./controls/TitleSearchBar";
 import { LocationPopup } from "./overlays/LocationPopup";
+import { StationMarkers } from "./overlays/StationMarkers";
 import { ProductAccordion } from "./panels/ProductAccordion";
 import { AdminBoundaries } from "./sources/AdminBoundaries";
 import { RasterOverlay } from "./layers/RasterOverlay";
@@ -17,7 +18,11 @@ import { SelectionProvider } from "./state/SelectionProvider";
 import { useMapSettings } from "./state/useMapSettings";
 import { useSelection } from "./state/useSelection";
 import { INTERACTIVE_LAYER_IDS, MAP_ID } from "./config/constants";
-import { DEFAULT_PRODUCT_ID, variableKey } from "./config/products";
+import {
+  DEFAULT_PRODUCT_ID,
+  overlaysForVariable,
+  variableKey,
+} from "./config/products";
 import {
   FIT_BOUNDS_OPTIONS,
   PHILIPPINES_BOUNDS,
@@ -46,6 +51,13 @@ import "maplibre-gl/dist/maplibre-gl.css";
 function DataLayers() {
   return (
     <>
+      {/*
+        Always mounted, even for a layer that declares no `boundaries` overlay.
+        It owns two things with different audiences: the administrative fills and
+        strokes, which are the product's data and come and go with it, and the
+        place-name labels, which are wayfinding and stay. The declaration is read
+        inside it, not here, so that distinction can be made.
+      */}
       <AdminBoundaries />
       <RasterOverlay />
     </>
@@ -61,7 +73,16 @@ function DataLayers() {
  */
 function MapScene() {
   const { basemap } = useMapSettings();
+  const { variable } = useSelection();
   const mapStyle = useBasemapStyle(basemap);
+
+  // What the selected layer declares it is made of. Read here rather than only
+  // inside each overlay because one of the consequences is a prop on <Map>
+  // itself: with no boundaries there is nothing to hit-test, and the hit test is
+  // configured from outside the components that own the layers.
+  const overlays = overlaysForVariable(variable);
+  const hitTestable = overlays.includes("boundaries");
+  const stations = overlays.includes("stations");
   // Runs before the early return below so the hook order stays fixed; it is a
   // no-op until the map instance exists.
   useElasticBounds(SOFT_BOUNDS);
@@ -90,17 +111,23 @@ function MapScene() {
       maxZoom={ZOOM_LIMITS.maxZoom}
       // No maxBounds on purpose — it is a hard clamp, and useElasticBounds
       // provides the limit instead, with a spring back on release.
-      interactiveLayerIds={INTERACTIVE_LAYER_IDS}
+      // `undefined` rather than an empty array when nothing is hit-testable.
+      // react-maplibre reads any array as "tracking on" and then queries with
+      // `layers: []`, which MapLibre takes as *every* layer in the style rather
+      // than none — the opposite of what is being asked for, on every mousemove.
+      // See the note on INTERACTIVE_LAYER_IDS in config/constants.
+      interactiveLayerIds={hitTestable ? INTERACTIVE_LAYER_IDS : undefined}
       // MapControls mounts an AttributionControl explicitly; leaving the
       // default on would render a second one.
       attributionControl={false}
       style={{ width: "100%", height: "100%" }}
     >
       <DataLayers />
-      {/* Not in DataLayers: the marker and popup are DOM over the canvas, not
+      {/* Not in DataLayers: markers and popups are DOM over the canvas, not
           style layers, so they have no place in LAYER_ORDER. They do have to be
           inside <Map>, which is how they reach the instance. */}
       <LocationPopup />
+      {stations && <StationMarkers />}
     </Map>
   );
 }
@@ -200,14 +227,18 @@ function MapChrome() {
  * rail writes the selected layer that the boundary source reads, and the
  * boundary source writes the location that the chrome will read back.
  *
- * MapToolbar and LayerPanel are no longer mounted: the imported design puts the
- * product rail where LayerPanel sat and the title bar where the toolbar sat,
- * and two panels in one box is not a layout. Both files are untouched on disk —
- * re-adding either is one line — but the controls they carry (basemap toggle,
- * the tiles-offline badge, overlay switches) currently have no home in the new
- * chrome and need folding into it. AdminLevelSelect is the exception: the
- * product now decides the administrative tiers, so a manual picker would be a
- * second, disagreeing source of truth. It should go when the rest is folded in.
+ * The pre-redesign chrome is gone: MapToolbar, LayerPanel, BasemapToggle and
+ * AdminLevelSelect have been deleted rather than left unmounted. The imported
+ * design puts the product rail where LayerPanel sat and the title bar where the
+ * toolbar sat, and keeping a second, unreachable set of controls on disk only
+ * made it ambiguous which one the map actually obeys.
+ *
+ * Three of the settings they wrote survive in MapSettings, because live code
+ * still *reads* them: the basemap (MapScene), the boundary switch
+ * (AdminBoundaries) and per-layer visibility (RasterOverlay). Each is stuck on
+ * its default until the new chrome grows a control for it — the setters are the
+ * seam that control plugs into. `adminLevel` did not survive: the selected
+ * product decides the administrative tiers now, so nothing read it.
  */
 export function MapRoot() {
   return (

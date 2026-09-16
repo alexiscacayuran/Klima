@@ -72,6 +72,19 @@ export const LAYER_ORDER: string[] = [
   // they are elements over the canvas, not style layers, so they have no place
   // in this array and win by construction rather than by ordering.
   LAYER_IDS.boundariesLabel,
+
+  // --- draws nothing, and is here so that nobody deletes it ---
+
+  // The station source's keeper layer. It paints no pixels at any zoom, so it
+  // has no position in paint order at all and its place in this list is
+  // nominal: it is last because that is where a layer that draws nothing does
+  // the least harm if the filter is ever removed by accident.
+  //
+  // It exists because MapLibre stops loading a source that no unhidden layer
+  // references, which would make querySourceFeatures return nothing — see the
+  // note on LAYER_IDS.stationPoints. The station pills themselves are DOM
+  // markers, like the popup above, and are likewise not in this array.
+  LAYER_IDS.stationPoints,
 ]
 
 /**

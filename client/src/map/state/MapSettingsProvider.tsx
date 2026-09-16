@@ -3,8 +3,7 @@ import type { ReactNode } from 'react'
 import type { BasemapId } from '@/map/config/styles'
 import { DEFAULT_BASEMAP } from '@/map/config/styles'
 import { RASTER_LAYERS } from '@/map/layers'
-import type { AdminLevel } from '@/map/types/features'
-import { DEFAULT_ADMIN_LEVEL, MapSettingsContext } from './mapSettingsContext'
+import { MapSettingsContext } from './mapSettingsContext'
 
 /** Seeded from the registry so a layer's default lives with its definition. */
 const initialVisibility = (): Record<string, boolean> =>
@@ -14,7 +13,6 @@ const initialVisibility = (): Record<string, boolean> =>
 
 export function MapSettingsProvider({ children }: { children: ReactNode }) {
   const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP)
-  const [adminLevel, setAdminLevel] = useState<AdminLevel>(DEFAULT_ADMIN_LEVEL)
   const [showBoundaries, setShowBoundaries] = useState(true)
   const [visibleLayers, setVisibleLayers] = useState(initialVisibility)
 
@@ -29,14 +27,12 @@ export function MapSettingsProvider({ children }: { children: ReactNode }) {
     () => ({
       basemap,
       setBasemap,
-      adminLevel,
-      setAdminLevel,
       showBoundaries,
       setShowBoundaries,
       visibleLayers,
       toggleLayer,
     }),
-    [basemap, adminLevel, showBoundaries, visibleLayers, toggleLayer],
+    [basemap, showBoundaries, visibleLayers, toggleLayer],
   )
 
   return (
