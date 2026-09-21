@@ -1,6 +1,7 @@
 import { Marker, Popup } from "@vis.gl/react-maplibre";
 import { ChevronDown } from "lucide-react";
 import { seasonalMonth } from "@/api/seasonal";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { SymbologyMode } from "@/map/config/colorScales";
 import { symbologyModeFor } from "@/map/config/rasters";
 import {
@@ -9,6 +10,7 @@ import {
   seasonalValue,
 } from "@/map/config/seasonalReadings";
 import { formatStepId } from "@/map/config/timeline";
+import { useProducts } from "@/map/hooks/useProducts";
 import { useSeasonalForecast } from "@/map/hooks/useSeasonalForecast";
 import type { SeasonalForecastState } from "@/map/hooks/useSeasonalForecast";
 import { useSelection } from "@/map/state/useSelection";
@@ -17,9 +19,8 @@ import { useSelection } from "@/map/state/useSelection";
  * The value the card quotes, and what it is.
  *
  * One shape for every outcome, so the card's height never depends on whether
- * the fetch landed: there is always a value slot and always a line under it.
- * When there is no number the slot holds an em dash and the line below says
- * why — "no data" and "not fetched yet" and "the API is down" are three
+ * the fetch landed: there is always a value slot, with the label to its right.
+ * When there is no number the slot holds an em dash and the label says why — "no data" and "not fetched yet" and "the API is down" are three
  * different things to a reader, and the same distinction the timeline's
  * placeholder makes.
  */
@@ -30,16 +31,16 @@ type Reading = {
   unit?: string;
   /**
    * What the number *means*, when there is one — the class it falls in on the
-   * layer's own symbology: "Wet month", "Above normal". Not the name of the
-   * quantity, which the rail already states and which the unit beside the
-   * figure repeats; a card with room for one line under a number should spend
-   * it on the reading nothing else on screen gives.
+   * layer's own symbology: "Above normal". Not the name of the quantity, which
+   * the rail already states and which the unit beside the figure repeats.
+   * Absent when the layer's bands have no names (forecast rainfall publishes
+   * amounts only), in which case the number and swatch stand alone.
    *
    * With no number it carries the reason instead, and the quantity's name comes
    * back — "Forecast rainfall…" while the fetch is out — because at that point
-   * naming what is missing is the only thing the line can say.
+   * naming what is missing is the only thing the label can say.
    */
-  label: string;
+  label?: string;
   /**
    * The value's colour, when there is one — resolved through the mode the
    * selected layer declares, so it is the ink the surface under this card is
@@ -49,6 +50,11 @@ type Reading = {
    * thirds of every band.
    */
   color?: string;
+  /**
+   * Still being fetched. The card draws skeletons in the value and label slots
+   * and keeps `label` for screen readers only.
+   */
+  loading?: boolean;
 };
 
 const NO_VALUE = "—";
@@ -67,6 +73,7 @@ function readingFor(
   forecast: SeasonalForecastState,
   date: string | null,
   mode: SymbologyMode,
+  datesLoading: boolean,
 ): Reading | null {
   if (forecast.status === "idle") return null;
 
@@ -86,8 +93,11 @@ function readingFor(
     return { value: NO_VALUE, label: "Published per station only" };
   }
 
-  if (forecast.status === "loading") {
-    return { value: NO_VALUE, label: `${reading.label}…` };
+  // The month is as much a part of the request as the place: with the
+  // catalogue still in flight there is no date to look the forecast up by, and
+  // "No forecast for this month" would be a verdict on a month nobody chose.
+  if (forecast.status === "loading" || (datesLoading && date === null)) {
+    return { value: NO_VALUE, label: `${reading.label}…`, loading: true };
   }
   if (forecast.status === "error") {
     return { value: NO_VALUE, label: "Forecast unavailable" };
@@ -111,7 +121,7 @@ function readingFor(
   // than the rounded one this card shows.
   //
   // The two come from different calls on purpose. The *name* of a reading is
-  // always its class — "Wet month" is a band, and there is no such thing as an
+  // always its class — "Above normal" is a band, and there is no such thing as an
   // interpolated one — while the *colour* is whatever the map is painting,
   // which under a ramp sits between two published hexes.
   const band = reading.scale.classAt(value);
@@ -148,7 +158,14 @@ export function LocationPopup() {
   // Above the early return, as hooks have to be. It keys on the pin itself, so
   // with none it fetches nothing and reports `idle`.
   const forecast = useSeasonalForecast();
-  const reading = readingFor(variable, forecast, date, symbologyModeFor(variable));
+  const datesLoading = useProducts().status === "loading";
+  const reading = readingFor(
+    variable,
+    forecast,
+    date,
+    symbologyModeFor(variable),
+    datesLoading,
+  );
 
   // No pin, nothing to point at. Unmounting rather than hiding is what keeps
   // MapLibre from holding a popup element over the canvas that swallows clicks.
@@ -240,9 +257,16 @@ export function LocationPopup() {
               of its own: the place is what the card is about, the month is
               when. `whitespace-nowrap` keeps "September 7, 2026" off a second
               line, and the right padding keeps it clear of the close button. */}
-          <p className="pr-5 font-cis-mono text-[10px]/3 font-medium tracking-[0.02em] whitespace-nowrap text-fg-subtle">
-            {date ? formatStepId(date) : NO_VALUE}
-          </p>
+          <div className="pr-5 font-cis-mono text-[10px]/3 font-medium tracking-[0.02em] whitespace-nowrap text-fg-subtle">
+            {date ? (
+              formatStepId(date)
+            ) : datesLoading ? (
+              // 8px plus 2px either side: the eyebrow's own 12px line box.
+              <Skeleton className="my-0.5 h-2 w-20 rounded-full bg-line" />
+            ) : (
+              NO_VALUE
+            )}
+          </div>
           {/* A paragraph rather than a heading: the app has no heading outline
               to slot into, and a lone h2 in a transient popup would invent one
               that leads nowhere. */}
@@ -255,60 +279,72 @@ export function LocationPopup() {
               because the date was sharing it. */}
           <div className="mt-1 flex items-end justify-between gap-3">
             <div className="min-w-0">
-              {reading && (
-                <>
-                  {/* The reading, set in the biggest type the card holds —
-                      which is the point of it. The place name above says where,
-                      the month says when, and this is the one line that is the
-                      answer rather than the question; nothing else here is
-                      allowed to outsize it.
+              {reading?.loading && (
+                // The value line's own 28px box, with the value and label
+                // slots where they will land, so nothing moves when the number
+                // arrives. The label is kept for screen readers.
+                <div role="status" className="flex h-7 items-center gap-2">
+                  <Skeleton className="size-3 shrink-0 rounded-[3px] bg-line" />
+                  <Skeleton className="h-5 w-16 rounded-field bg-line" />
+                  <Skeleton className="h-2.5 w-16 rounded-full bg-line" />
+                  <span className="sr-only">{reading.label}</span>
+                </div>
+              )}
+              {reading && !reading.loading && (
+                /* The reading, set in the biggest type the card holds — which
+                   is the point of it. The place name above says where, the
+                   month says when, and this is the one line that is the answer
+                   rather than the question; nothing else here is allowed to
+                   outsize it.
 
-                      Mono, and for a reason the name above does not have: this
-                      number is replaced in place every time the timeline moves a
-                      month, and proportional digits would reflow the line each
-                      time a 1 landed where a 4 was. The unit is set beside it at
-                      body size so "mm" does not compete with the figure it
-                      qualifies, and the em-dash states reuse the same slot so
-                      the card cannot change height between a forecast and a gap
-                      in one. */}
-                  <p className="flex items-center gap-2">
-                    {/* The value's place on the layer's symbology, in the ink
-                        the map is painting that value with — classed or
-                        interpolated, whichever the layer declares (see
-                        config/rasters `symbologyModeFor`). A swatch rather
-                        than colouring the
-                        digits: this scale runs from #e1e1e1 to #000000, so half
-                        of it is unreadable as text on one theme or the other,
-                        and a number that changes colour with its own value
-                        reads as a status where it is only a position on a ramp.
+                   Mono, and for a reason the name above does not have: this
+                   number is replaced in place every time the timeline moves a
+                   month, and proportional digits would reflow the line each
+                   time a 1 landed where a 4 was. The unit is set beside it at
+                   body size so "mm" does not compete with the figure it
+                   qualifies, and the em-dash states reuse the same slot so the
+                   card cannot change height between a forecast and a gap in
+                   one. */
+                <p className="flex items-center gap-2">
+                  {/* The value's place on the layer's symbology, in the ink the
+                      map is painting that value with — classed or interpolated,
+                      whichever the layer declares (see config/rasters
+                      `symbologyModeFor`). A swatch rather than colouring the
+                      digits: this scale runs from #e1e1e1 to #000000, so half
+                      of it is unreadable as text on one theme or the other, and
+                      a number that changes colour with its own value reads as a
+                      status where it is only a position on a ramp.
 
-                        It holds its slot in every state — filled with the well
-                        colour when there is no value — because the alternative
-                        is the figure sliding left and right as the fetch
-                        resolves, in a card that is otherwise careful not to
-                        move under the pointer. The ring is what keeps both ends
-                        of the ramp visible: neither the near-white bottom nor
-                        the black top has an edge of its own against one of the
-                        two panel colours. */}
-                    <span
-                      aria-hidden
-                      className="size-3 shrink-0 rounded-[3px] ring-1 ring-line-strong ring-inset"
-                      style={{ backgroundColor: reading.color ?? "var(--cis-well)" }}
-                    />
-                    <span className="font-cis-mono text-[22px]/7 font-semibold tracking-tight text-fg-heading">
-                      {reading.value}
-                      {reading.unit && (
-                        <span className="ml-1 text-[12px] font-medium text-fg-subtle">
-                          {reading.unit}
-                        </span>
-                      )}
+                      It holds its slot in every state — filled with the well
+                      colour when there is no value — because the alternative is
+                      the figure sliding left and right as the fetch resolves, in
+                      a card that is otherwise careful not to move under the
+                      pointer. The ring is what keeps both ends of the ramp
+                      visible: neither the near-white bottom nor the black top
+                      has an edge of its own against one of the two panel
+                      colours. */}
+                  <span
+                    aria-hidden
+                    className="size-3 shrink-0 rounded-[3px] ring-1 ring-line-strong ring-inset"
+                    style={{ backgroundColor: reading.color ?? "var(--cis-well)" }}
+                  />
+                  <span className="shrink-0 font-cis-mono text-[22px]/7 font-semibold tracking-tight text-fg-heading">
+                    {reading.value}
+                    {reading.unit && (
+                      <span className="ml-1 text-[12px] font-medium text-fg-subtle">
+                        {reading.unit}
+                      </span>
+                    )}
+                  </span>
+                  {/* What the number means, to the right of it: "Above normal"
+                      is the sentence the reader came for. Only where the layer
+                      names its bands — or, with no number, the reason why. */}
+                  {reading.label && (
+                    <span className="text-[11px]/4 whitespace-nowrap text-fg-body">
+                      {reading.label}
                     </span>
-                  </p>
-                  {/* What the number means, not what it is called. "Wet month"
-                      is the sentence the reader came for; "Forecast rainfall"
-                      is the row they already clicked in the rail. */}
-                  <p className="text-[11px]/4 text-fg-body">{reading.label}</p>
-                </>
+                  )}
+                </p>
               )}
             </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { TimelineStep } from "@/map/config/timeline";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,11 @@ type TimelineBarProps = {
    * nothing but would leave the map looking like it had lost a control.
    */
   placeholder?: string;
+  /**
+   * The window is still being fetched. Draws skeleton ticks along the track in
+   * place of the placeholder text, which is kept for screen readers only.
+   */
+  loading?: boolean;
   /** How long each step is held while playing. */
   stepDurationMs?: number;
   className?: string;
@@ -40,6 +46,24 @@ type TimelineBarProps = {
  * track. Shared by the tick rail and the fill's calc so the two cannot drift.
  */
 const RAIL_INSET = 8;
+
+/** How many placeholder ticks the loading state lays along the track. */
+const SKELETON_TICKS = 6;
+
+/**
+ * The visual shift that pulls an end label flush with the end of the track.
+ *
+ * Labels are centred on their ticks, and the end ticks sit on the rail, which
+ * is RAIL_INSET short of the track at both ends. Half the label's own width
+ * brings its outer edge onto the tick; RAIL_INSET more brings it onto the end
+ * of the track. `translate` is visual only, so the tick under it stays put.
+ */
+function endLabelStyle(index: number, lastIndex: number) {
+  if (lastIndex <= 0) return undefined;
+  if (index === 0) return { translate: `calc(50% - ${RAIL_INSET}px)` };
+  if (index === lastIndex) return { translate: `calc(-50% + ${RAIL_INSET}px)` };
+  return undefined;
+}
 
 /**
  * Scrubber for the selected product's window under the map.
@@ -75,6 +99,7 @@ export function TimelineBar({
   value,
   onChange,
   placeholder = "No dates available",
+  loading = false,
   stepDurationMs = 1200,
   className,
 }: TimelineBarProps) {
@@ -179,10 +204,47 @@ export function TimelineBar({
         {isEmpty && (
           <p
             role="status"
-            className="absolute inset-x-0 top-0 font-cis-mono text-xs/4 text-fg-subtle"
+            className={cn(
+              "absolute inset-x-0 top-0 font-cis-mono text-xs/4 text-fg-subtle",
+              loading && "sr-only",
+            )}
           >
             {placeholder}
           </p>
+        )}
+
+        {/* While the window is in flight, the shape of a scale rather than a
+            sentence about one: label and dot placeholders laid out exactly as
+            real ticks would be, so the bar does not rearrange itself when the
+            dates land. The count is a stand-in — the real one is not known
+            until the catalogue is. */}
+        {isEmpty && loading && (
+          <div
+            aria-hidden
+            className="absolute inset-y-0"
+            style={{ left: RAIL_INSET, right: RAIL_INSET }}
+          >
+            {Array.from({ length: SKELETON_TICKS }, (_, index) => {
+              const last = SKELETON_TICKS - 1;
+              return (
+                <div
+                  key={index}
+                  style={{ left: `${(index / last) * 100}%` }}
+                  className="absolute inset-y-0 flex -translate-x-1/2 flex-col items-center justify-between"
+                >
+                  <div className="flex h-4 items-center">
+                    <Skeleton
+                      className="h-2.5 w-7 rounded-full bg-line-strong"
+                      style={endLabelStyle(index, last)}
+                    />
+                  </div>
+                  <div className="flex size-4 items-center justify-center">
+                    <Skeleton className="size-2 rounded-full bg-line-strong" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
 
         {/* The rail: the track minus a cap at each end. Ticks are positioned
@@ -227,14 +289,10 @@ export function TimelineBar({
                     isActive
                       ? "font-semibold text-fg-heading"
                       : "text-fg-subtle",
-                    // The end labels are centred on ticks that sit on the ends
-                    // of the rail, so half of each would hang off it. Sliding
-                    // one in by half its own width aligns it to the end
-                    // instead; the transform is visual only, so the tick below
-                    // stays where it is.
-                    index === 0 && lastIndex > 0 && "translate-x-1/2",
-                    index === lastIndex && lastIndex > 0 && "-translate-x-1/2",
                   )}
+                  // The end labels align to the ends of the track rather than
+                  // hanging half off their ticks — see endLabelStyle.
+                  style={endLabelStyle(index, lastIndex)}
                 >
                   {step.label}
                 </span>

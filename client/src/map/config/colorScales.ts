@@ -2,7 +2,8 @@ import chroma from "chroma-js";
 
 /**
  * The published symbology for one mapped layer — the colours the choropleth
- * paints, the classes a value falls into, and the words for each class.
+ * paints, the classes a value falls into, and — where the layer has them — the
+ * words for each class.
  *
  * One table per *layer*, not per variable: seasonal rainfall is published as
  * two layers off one variable — a forecast total in mm and a percent of normal
@@ -36,8 +37,12 @@ export type ScaleBreak = {
   value: number;
   /** The hex as published. Copied, never re-derived. */
   color: string;
-  /** What a value in this class means, in words. */
-  label: string;
+  /**
+   * What a value in this class means, in words. Optional: a layer whose bands
+   * have no published names carries none, and every consumer prints the number
+   * and colour alone rather than inventing one.
+   */
+  label?: string;
 };
 
 /** One class, as the legend lists it and the popup names it. */
@@ -47,7 +52,7 @@ export type ScaleClass = {
   /** Exclusive; null for the open-topped last class. */
   to: number | null;
   color: string;
-  label: string;
+  label?: string;
   /**
    * The bounds as printed — "100–200", "≥ 500". Unit-free on purpose: a legend
    * states its unit once in its own heading rather than on every row.
@@ -87,6 +92,15 @@ export type SymbologyMode = "ramp" | "step";
 export const DEFAULT_SYMBOLOGY_MODE: SymbologyMode = "step";
 
 export type ColorScale = {
+  /**
+   * What the breaks are measured in — "mm", "%", "°C" — as the legend heads it.
+   *
+   * On the table rather than on whatever maps it, because the numbers in
+   * `breaks` mean nothing without it and this is the one object that carries
+   * them: the forecast and its percent of normal are separate tables precisely
+   * because they are different quantities, and the unit is the difference.
+   */
+  unit: string;
   /** The authored table, in ascending order. */
   breaks: readonly ScaleBreak[];
   /** The same table read as classes — what a discrete legend lists. */
@@ -125,7 +139,10 @@ export type ColorScale = {
  * 50 mm steps at the bottom, 100 mm at the top — that would print swatches that
  * appear nowhere in the published table.
  */
-function buildScale(breaks: readonly ScaleBreak[]): ColorScale {
+function buildScale(
+  unit: string,
+  breaks: readonly ScaleBreak[],
+): ColorScale {
   const domain = breaks.map((step) => step.value);
   const ramp = chroma.scale(breaks.map((step) => step.color)).domain(domain);
 
@@ -155,6 +172,7 @@ function buildScale(breaks: readonly ScaleBreak[]): ColorScale {
   };
 
   return {
+    unit,
     breaks,
     classes,
     colorAt,
@@ -185,22 +203,19 @@ function buildScale(breaks: readonly ScaleBreak[]): ColorScale {
  * ramp spends its most legible range on the totals that separate a dry month
  * from a wet one.
  *
- * The words describe the *amount*, never a departure from normal — a 30 mm
- * February in Ilocos is a dry month and an unremarkable one, and saying which
- * is the percent-of-normal layer's job, not this one's. That is also why they
- * avoid the light/moderate/heavy vocabulary PAGASA reserves for rainfall
- * warnings: those are rates over hours, and these are totals over a month.
- * They name the published bands in plain language; they are not a PAGASA
- * classification, unlike the percent-of-normal categories below.
+ * No class names. PAGASA publishes these bands as amounts only, and naming
+ * them here would be a classification the bulletin does not make — so the
+ * popup and legend quote the total and its colour and say nothing more. The
+ * percent-of-normal layer below is the one with published categories.
  */
-export const RAINFALL_FORECAST_SCALE = buildScale([
-  { value: 0, color: "#e1e1e1", label: "Very dry month" },
-  { value: 50, color: "#bee8ff", label: "Dry month" },
-  { value: 100, color: "#01c5ff", label: "Moderate month" },
-  { value: 200, color: "#0071fe", label: "Wet month" },
-  { value: 300, color: "#004da7", label: "Very wet month" },
-  { value: 400, color: "#002573", label: "Extremely wet month" },
-  { value: 500, color: "#000000", label: "Exceptional rainfall" },
+export const RAINFALL_FORECAST_SCALE = buildScale("mm", [
+  { value: 0, color: "#e1e1e1" },
+  { value: 50, color: "#bee8ff" },
+  { value: 100, color: "#01c5ff" },
+  { value: 200, color: "#0071fe" },
+  { value: 300, color: "#004da7" },
+  { value: 400, color: "#002573" },
+  { value: 500, color: "#000000" },
 ]);
 
 /**
@@ -240,7 +255,7 @@ export const RAINFALL_FORECAST_SCALE = buildScale([
  * rather than a gap to paper over — above normal is above normal, and the
  * bulletin draws no line inside it.
  */
-export const RAINFALL_PERCENT_OF_NORMAL_SCALE = buildScale([
+export const RAINFALL_PERCENT_OF_NORMAL_SCALE = buildScale("%", [
   { value: 0, color: "#e0301f", label: "Way below normal" },
   { value: 40, color: "#f4f04f", label: "Below normal" },
   { value: 80, color: "#3d8b2e", label: "Near normal" },
@@ -269,7 +284,7 @@ export const RAINFALL_PERCENT_OF_NORMAL_SCALE = buildScale([
  * is `tmeanAnomaly`'s question, not this one's — the same division the two
  * rainfall tables above keep.
  */
-export const SEASONAL_TEMPERATURE_SCALE = buildScale([
+export const SEASONAL_TEMPERATURE_SCALE = buildScale("°C", [
   { value: 18, color: "#2c7bb6", label: "Cool" },
   { value: 21, color: "#abd9e9", label: "Mild" },
   { value: 24, color: "#ffffbf", label: "Warm" },

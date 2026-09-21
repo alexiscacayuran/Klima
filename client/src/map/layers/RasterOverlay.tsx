@@ -4,14 +4,10 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { ImageType, RasterLayer } from 'weatherlayers-gl'
 
 import { LAYER_IDS } from '@/map/config/constants'
-import { hasOverlay } from '@/map/config/products'
-import {
-  rasterPalette,
-  rasterUrl,
-  rasterVariantFor,
-} from '@/map/config/rasters'
+import { rasterPalette, rasterUrl } from '@/map/config/rasters'
 import type { RasterVariant } from '@/map/config/rasters'
 import { useIssuance } from '@/map/hooks/useIssuance'
+import { useRasterVariant } from '@/map/hooks/useRasterVariant'
 import { prefetchRasterImage, useRasterImage } from '@/map/hooks/useRasterImage'
 import type { RasterImage, RasterImageState } from '@/map/hooks/useRasterImage'
 import { useTimeline } from '@/map/hooks/useTimeline'
@@ -103,19 +99,12 @@ type Surface = {
 }
 
 export function RasterOverlay() {
-  const { variable, date } = useSelection()
+  const { date } = useSelection()
   const { visibleLayers } = useMapSettings()
   const { steps } = useTimeline()
-
-  // Two questions, and both have to say yes. `rasterVariantFor` answers whether
-  // CIS publishes a surface for this layer; the overlay declaration answers
-  // whether the layer is meant to *draw* one. They are usually the same answer
-  // and are not the same question — a published surface a product has chosen not
-  // to show is a real configuration, and the variant table is the wrong place to
-  // express it because it would mean deleting the URL layout to hide the image.
-  const variant = hasOverlay(variable, 'raster')
-    ? rasterVariantFor(variable)
-    : null
+  // Shared with the legend, so the two cannot disagree about which surface is
+  // up — see the hook for the two questions it asks.
+  const variant = useRasterVariant()
   const issuance = useIssuance(variant?.product)
   const issuedAt = issuance.status === 'ready' ? issuance.issuedAt : null
 

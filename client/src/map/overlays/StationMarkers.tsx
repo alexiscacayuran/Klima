@@ -61,6 +61,8 @@ type StationFeatureProperties = {
   color?: string;
   name: string;
   fullName: string;
+  /** The forecast values are still in flight; the pill draws a skeleton. */
+  loading: boolean;
 };
 
 export function StationMarkers() {
@@ -116,6 +118,7 @@ export function StationMarkers() {
           color,
           name: stationShortName(station.name),
           fullName: station.name,
+          loading: values.status === "loading",
         };
 
         return {
@@ -241,5 +244,6 @@ function pillProps(properties: Record<string, unknown>) {
     color: text("color"),
     name: text("name") ?? "",
     title: text("fullName"),
+    loading: properties.loading === true,
   };
 }

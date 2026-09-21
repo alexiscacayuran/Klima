@@ -94,7 +94,7 @@ export type SeasonalReading = {
    * The layer's published symbology (see config/colorScales).
    *
    * What makes a reading say something rather than only state a number: the
-   * scale is what turns 240 mm into "Wet month" and gives the popup the same
+   * scale is what turns 130% into "Above normal" and gives the popup the same
    * ink the choropleth will paint that province with. Required, not optional —
    * a layer this file can name a field for is a layer something will map, and
    * a mapped layer without a symbology is a hole the legend would have to

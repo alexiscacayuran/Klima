@@ -1,3 +1,4 @@
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 /**
@@ -47,6 +48,11 @@ export type StationPillProps = {
   name: string;
   /** The full name, for a pointer that rests on the pill. */
   title?: string;
+  /**
+   * The station is placed but its reading has not arrived. Distinct from a null
+   * value, which is a station with no reading this month.
+   */
+  loading?: boolean;
 };
 
 export function StationPill({
@@ -55,6 +61,7 @@ export function StationPill({
   color,
   name,
   title,
+  loading = false,
 }: StationPillProps) {
   return (
     <div
@@ -69,14 +76,22 @@ export function StationPill({
       )}
     >
       <p className="truncate text-[9px]/3 text-fg-body">{name}</p>
-      <p className="font-cis-mono mt-0.5 text-[11px]/3 font-semibold tracking-tight text-fg-heading">
-        {value ?? NO_VALUE}
-        {value !== null && unit && (
-          <span className="ml-0.5 text-[9px] font-medium text-fg-subtle">
-            {unit}
-          </span>
-        )}
-      </p>
+      {loading ? (
+        // The figure's own 12px line box, so the pill does not resize when the
+        // number lands.
+        <div className="mt-0.5 flex h-3 items-center">
+          <Skeleton className="h-2 w-10 rounded-full bg-line" />
+        </div>
+      ) : (
+        <p className="font-cis-mono mt-0.5 text-[11px]/3 font-semibold tracking-tight text-fg-heading">
+          {value ?? NO_VALUE}
+          {value !== null && unit && (
+            <span className="ml-0.5 text-[9px] font-medium text-fg-subtle">
+              {unit}
+            </span>
+          )}
+        </p>
+      )}
       {/*
         The class, as an edge rather than an object. Absolutely positioned so it
         spans the full height whatever the two lines come to, and so it costs the

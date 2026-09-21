@@ -7,9 +7,11 @@ import { TitleSearchBar } from "./controls/TitleSearchBar";
 import { LocationPopup } from "./overlays/LocationPopup";
 import { StationMarkers } from "./overlays/StationMarkers";
 import { ProductAccordion } from "./panels/ProductAccordion";
+import { RasterLegend } from "./panels/RasterLegend";
 import { AdminBoundaries } from "./sources/AdminBoundaries";
 import { RasterOverlay } from "./layers/RasterOverlay";
 import { useBasemapStyle } from "./hooks/useBasemapStyle";
+import { useRasterVariant } from "./hooks/useRasterVariant";
 import { useTimeline } from "./hooks/useTimeline";
 import type { TimelineState } from "./hooks/useTimeline";
 import { useElasticBounds } from "./interactions/useElasticBounds";
@@ -17,7 +19,11 @@ import { MapSettingsProvider } from "./state/MapSettingsProvider";
 import { SelectionProvider } from "./state/SelectionProvider";
 import { useMapSettings } from "./state/useMapSettings";
 import { useSelection } from "./state/useSelection";
-import { INTERACTIVE_LAYER_IDS, MAP_ID } from "./config/constants";
+import {
+  INTERACTIVE_LAYER_IDS,
+  LAYER_IDS,
+  MAP_ID,
+} from "./config/constants";
 import {
   DEFAULT_PRODUCT_ID,
   overlaysForVariable,
@@ -173,6 +179,13 @@ const TIMELINE_PLACEHOLDER: Record<TimelineState["status"], string> = {
 function MapChrome() {
   const { variable, setVariable, date, setDate } = useSelection();
   const { steps, status } = useTimeline();
+  const { visibleLayers } = useMapSettings();
+  // The key to the surface on screen, so nothing when there is none: a layer
+  // that publishes no raster, or a raster switched off. Read through the same
+  // hook RasterOverlay uses, so the legend cannot explain a different surface.
+  const raster = useRasterVariant();
+  const legend =
+    raster && (visibleLayers[LAYER_IDS.raster] ?? true) ? raster : null;
   const [openProductId, setOpenProductId] = useState<string | null>(
     DEFAULT_PRODUCT_ID,
   );
@@ -196,21 +209,39 @@ function MapChrome() {
         }
       />
 
-      {/* Centred on the viewport rather than on the gap beside the rail: the
-          rail's max-height stops it 128px above the bottom edge and the bar's
-          top sits at 96px, so the two never meet and the bar is free to hold
-          the screen's centre line. `mx-auto` between the two insets centres it
-          while `inset-x-6` caps it — it keeps 600px until the viewport is
-          narrower than that plus its margins, and only then shrinks. 600 is
-          close to the search card above it, so the two centred bars read as
-          one composition rather than two unrelated widths. */}
-      <TimelineBar
-        className="absolute inset-x-6 bottom-6 mx-auto max-w-[600px]"
-        steps={steps}
-        value={date}
-        onChange={setDate}
-        placeholder={TIMELINE_PLACEHOLDER[status]}
-      />
+      {/* The bottom row: the timeline on the viewport's centre line, the legend
+          in the right-hand corner.
+
+          Three columns, and the outer two are equal `flex-1`s, so the timeline
+          stays centred on the viewport and not just on the gap beside the
+          legend. That is the same line the search card above it is centred on,
+          and 600 is close to that card's width, so the two bars read as one
+          composition rather than two unrelated widths. The timeline keeps 600px
+          while the sides have room and only then shrinks. The rail's max-height
+          stops it 128px above the bottom edge and the bar's top sits at 96px,
+          so the empty left column never runs into it.
+
+          The right column never gets narrower than the legend, whether or not
+          one is showing. Otherwise, on a viewport too narrow to centre both,
+          switching to a layer with no raster would free that width and the
+          timeline would jump sideways. `min-w-80` is the legend's own `w-80`.
+
+          `items-end` sits the shorter legend on the same bottom edge as the
+          timeline, which is what makes it read as the corner of the chrome. */}
+      <div className="absolute inset-x-6 bottom-6 flex items-end gap-4">
+        <div className="flex-1" />
+        <TimelineBar
+          className="min-w-0 flex-[0_1_600px]"
+          steps={steps}
+          value={date}
+          onChange={setDate}
+          placeholder={TIMELINE_PLACEHOLDER[status]}
+          loading={status === "loading"}
+        />
+        <div className="flex min-w-80 flex-1 justify-end">
+          {legend && <RasterLegend scale={legend.scale} mode={legend.mode} />}
+        </div>
+      </div>
     </div>
   );
 }
