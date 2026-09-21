@@ -110,6 +110,12 @@ test.describe("station markers", () => {
     expect(readings.length).toBeGreaterThan(0);
     // Forecast rainfall is the default layer, so a resolved pill reads in mm.
     expect(readings.some((pill) => /\d\s*mm\b/.test(pill.text))).toBe(true);
+
+    // The raster legend labels each cell with the value its range starts at.
+    const legend = page.getByRole("figure", { name: "Map legend" });
+    await expect(legend.locator("li")).toHaveText([
+      "<50", "50", "100", "200", "300", "400", "500+",
+    ].map((label) => new RegExp(`^${label}`)));
     await page.screenshot({ path: "e2e/__screenshots__/02-zoomed.png" });
 
     expect(errors).toEqual([]);
@@ -145,6 +151,76 @@ test.describe("station markers", () => {
     await page.waitForTimeout(1200);
     await expect(page.locator(".klima-popup")).toHaveCount(0);
 
+    // No surface, so the legend keys the pills: one °C bar.
+    const legend = page.getByRole("figure", { name: "Map legend" });
+    await expect(legend).toBeVisible();
+    await expect(legend).toContainText("°C");
+    await expect(legend.locator("ol")).toHaveCount(1);
+
     await page.screenshot({ path: "e2e/__screenshots__/03-temperature.png" });
+  });
+
+  test("probabilistic forecast shows tercile pills", async ({ page }) => {
+    await page.goto("/");
+    await settled(page);
+
+    // A sub-layer of Rainfall, which the rail shows expanded on load.
+    await page
+      .getByRole("button", { name: "Probabilistic Forecast", exact: true })
+      .click();
+    await page.waitForTimeout(2500);
+    await settled(page);
+
+    await page.mouse.move(700, 450);
+    for (let i = 0; i < 6; i += 1) {
+      await page.mouse.wheel(0, -600);
+      await page.waitForTimeout(800);
+    }
+    await settled(page);
+
+    const readings = (await pills(page)).filter((pill) => pill.kind === "station");
+    expect(readings.length).toBeGreaterThan(0);
+    // The dominant probability, tagged with which outcome it is.
+    expect(readings.some((pill) => /\d+%\s*(AN|NN|BN)\b/.test(pill.text))).toBe(
+      true,
+    );
+    expect(readings.some((pill) => /\d\s*mm\b/.test(pill.text))).toBe(false);
+
+    // A resolved pill's strip is split into three bands, one per tercile.
+    const bands = await page.evaluate(() =>
+      [...document.querySelectorAll(".maplibregl-marker span.flex-col")].map(
+        (strip) => strip.children.length,
+      ),
+    );
+    expect(bands.length).toBeGreaterThan(0);
+    expect(bands.every((count) => count === 3)).toBe(true);
+
+    // The legend keys the pills: one bar per tercile, thresholds aligned, so
+    // near normal's "50+" sits directly over the other two bars' "50".
+    const legend = page.getByRole("figure", {
+      name: "Tercile probability legend (%)",
+    });
+    await expect(legend).toBeVisible();
+    await expect(legend.locator("ol")).toHaveCount(3);
+    const [above, near] = await legend.locator("ol").all();
+    const fifty = await above.getByText("50", { exact: true }).boundingBox();
+    const nearTop = await near.getByText("50+", { exact: true }).boundingBox();
+    expect(Math.abs((fifty?.x ?? 0) - (nearTop?.x ?? 99))).toBeLessThan(3);
+    for (const name of ["AN", "NN", "BN"]) {
+      await expect(legend.getByText(name, { exact: true })).toBeVisible();
+    }
+
+    // A band is a confidence in its row's outcome, and says so.
+    await above.getByText("50", { exact: true }).hover();
+    const tooltip = page.getByText("Confidence", { exact: true });
+    await expect(tooltip).toBeVisible();
+    await expect(page.getByText("Above normal", { exact: true })).toHaveCount(0);
+
+    // Stations only, and nothing per province to quote: no readout opens.
+    await page.mouse.click(700, 450);
+    await page.waitForTimeout(1200);
+    await expect(page.locator(".klima-popup")).toHaveCount(0);
+
+    await page.screenshot({ path: "e2e/__screenshots__/04-probabilistic.png" });
   });
 });

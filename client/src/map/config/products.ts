@@ -164,6 +164,15 @@ export const PRODUCTS: readonly ProductDefinition[] = [
             label: "Percent of Normal",
             overlays: ["raster", "boundaries", "stations"],
           },
+          // Stations alone, like temperature: the tercile probabilities are
+          // published per station only, and the layer has no surface of its own —
+          // borrowing percent of normal's would put a legend beside the pills
+          // that describes different colours from theirs.
+          {
+            id: "probabilistic-forecast",
+            label: "Probabilistic Forecast",
+            overlays: ["stations"],
+          },
         ],
       },
       // No layers: the province endpoint carries no temperature at all, and the

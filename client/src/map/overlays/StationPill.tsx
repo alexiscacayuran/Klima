@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
  * So the colour moves to the edge: a strip down the right side, flush to it and
  * full height. It reads at a glance across seventy markers, which is what makes
  * the classification legible as a *pattern* rather than as seventy separate
- * facts, and it costs three pixels of width instead of a swatch plus its gap.
+ * facts, and it costs five pixels of width instead of a swatch plus its gap.
  * The right side rather than the left because the text is ragged-right: a strip
  * there closes the card against the uneven edge, where on the left it would
  * fight the alignment the two lines already share.
@@ -37,6 +37,15 @@ import { cn } from "@/lib/utils";
 
 const NO_VALUE = "—";
 
+/**
+ * One band of a strip split between several classes: its colour, and its share
+ * of the strip's height. Shares are relative, so they need not sum to 100.
+ */
+export type StripSegment = {
+  color: string;
+  share: number;
+};
+
 export type StationPillProps = {
   /** The value as printed, or null for a station with no reading this month. */
   value: string | null;
@@ -44,6 +53,11 @@ export type StationPillProps = {
   unit?: string;
   /** The class colour — the same ink the scale gives every other consumer. */
   color?: string;
+  /**
+   * The strip split top to bottom between several classes, in place of one
+   * `color`: the tercile probabilities, each band as tall as its share.
+   */
+  strip?: readonly StripSegment[];
   /** The station's own name, without the places that locate it. */
   name: string;
   /** The full name, for a pointer that rests on the pill. */
@@ -59,6 +73,7 @@ export function StationPill({
   value,
   unit,
   color,
+  strip,
   name,
   title,
   loading = false,
@@ -71,7 +86,7 @@ export function StationPill({
         // `overflow-hidden` is what gives the strip the card's own corners:
         // it is a plain rectangle, and the radius clipping it is this one.
         "overflow-hidden rounded-field",
-        "border border-line bg-panel-strong py-1 pr-2.5 pl-1.5 font-cis",
+        "border border-line bg-panel-strong py-1 pr-3 pl-1.5 font-cis",
         "shadow-float backdrop-blur-md",
       )}
     >
@@ -101,12 +116,30 @@ export function StationPill({
         class colour and not nothing: every pill keeps the same silhouette, and
         the absent band reads as "unclassified" rather than as a different kind
         of marker.
+
+        A split strip keeps the same box and divides it: flex-grow by share, so
+        the bands fill the height in proportion whatever the shares sum to.
       */}
-      <span
-        aria-hidden
-        className="absolute inset-y-0 right-0 w-[3px]"
-        style={{ backgroundColor: color ?? "var(--cis-line)" }}
-      />
+      {strip?.length ? (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 right-0 flex w-[5px] flex-col"
+        >
+          {strip.map((segment, index) => (
+            <span
+              key={index}
+              className="min-h-0"
+              style={{ flexGrow: segment.share, backgroundColor: segment.color }}
+            />
+          ))}
+        </span>
+      ) : (
+        <span
+          aria-hidden
+          className="absolute inset-y-0 right-0 w-[5px]"
+          style={{ backgroundColor: color ?? "var(--cis-line)" }}
+        />
+      )}
     </div>
   );
 }

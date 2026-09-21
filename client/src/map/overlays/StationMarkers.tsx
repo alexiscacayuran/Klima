@@ -2,19 +2,27 @@ import { useCallback, useMemo } from "react";
 import { Layer, Marker, Source } from "@vis.gl/react-maplibre";
 import { seasonalStationMonth } from "@/api/seasonal";
 import { stationShortName } from "@/api/stations";
+import type { Station } from "@/api/stations";
 import { LAYER_IDS, SOURCE_IDS } from "@/map/config/constants";
 import { symbologyModeFor } from "@/map/config/rasters";
+import { TERCILE_TAGS } from "@/map/config/colorScales";
 import {
+  dominantTercile,
   formatSeasonalValue,
   seasonalReadingFor,
   seasonalStationValue,
+  tercileProbabilities,
+  tercileReadingFor,
 } from "@/map/config/seasonalReadings";
+import type { TercileReading } from "@/map/config/seasonalReadings";
+import type { SeasonalStationMonth } from "@/api/seasonal";
 import { useMapInstance } from "@/map/hooks/useMapInstance";
 import { useSeasonalStations } from "@/map/hooks/useSeasonalStations";
 import { useStationClusters } from "@/map/hooks/useStationClusters";
 import { useStations } from "@/map/hooks/useStations";
 import { useSelection } from "@/map/state/useSelection";
 import { StationClusterPill, StationPill } from "./StationPill";
+import type { StripSegment } from "./StationPill";
 
 /**
  * The station layer: points where CIS observes, carrying what it forecasts.
@@ -59,6 +67,12 @@ type StationFeatureProperties = {
   value: string | null;
   unit?: string;
   color?: string;
+  /**
+   * A split strip, as JSON. Nested values do not survive the worker as
+   * objects — querySourceFeatures hands them back serialised — so the string
+   * is made here on purpose rather than left to happen.
+   */
+  strip?: string;
   name: string;
   fullName: string;
   /** The forecast values are still in flight; the pill draws a skeleton. */
@@ -72,6 +86,7 @@ export function StationMarkers() {
   const geometry = useStations("seasonal");
   const values = useSeasonalStations(true);
   const reading = seasonalReadingFor(variable);
+  const terciles = tercileReadingFor(variable);
 
   /**
    * The two halves joined, with the reading already resolved into the strings a
@@ -96,6 +111,17 @@ export function StationMarkers() {
       features: stations.map((station) => {
         const forecast = forecasts?.get(station.id) ?? null;
         const month = forecast ? seasonalStationMonth(forecast, date) : null;
+        const loading = values.status === "loading";
+
+        if (terciles) {
+          return stationFeature(station, {
+            ...tercileProperties(terciles, month),
+            name: stationShortName(station.name),
+            fullName: station.name,
+            loading,
+          });
+        }
+
         const value =
           reading && month ? seasonalStationValue(reading, month) : null;
         // Coloured off the raw number and printed from it separately: the pill
@@ -118,28 +144,16 @@ export function StationMarkers() {
           color,
           name: stationShortName(station.name),
           fullName: station.name,
-          loading: values.status === "loading",
+          loading,
         };
 
-        return {
-          type: "Feature" as const,
-          // The id is not decoration. querySourceFeatures returns a loose point
-          // with only its own properties — no cluster_id to key on — so without
-          // this there is no way to dedupe the copies that arrive from adjacent
-          // tiles' buffers.
-          id: station.id,
-          geometry: {
-            type: "Point" as const,
-            coordinates: [station.lng, station.lat],
-          },
-          properties,
-        };
+        return stationFeature(station, properties);
       }),
     };
     // No mode in the list: it is a property of the selected layer, and
     // `reading` already changes with that. The colour is baked into the feature
     // properties, so anything that could change it has to be here.
-  }, [geometry, values, reading, date, variable]);
+  }, [geometry, values, reading, terciles, date, variable]);
 
   const items = useStationClusters(geometry.status === "ready");
 
@@ -225,6 +239,75 @@ export function StationMarkers() {
   );
 }
 
+/** A station as a GeoJSON point carrying the pill's properties. */
+function stationFeature(
+  station: Station,
+  properties: StationFeatureProperties,
+): GeoJSON.Feature<GeoJSON.Point, StationFeatureProperties> {
+  return {
+    type: "Feature",
+    // The id is not decoration. querySourceFeatures returns a loose point with
+    // only its own properties — no cluster_id to key on — so without this there
+    // is no way to dedupe the copies that arrive from adjacent tiles' buffers.
+    id: station.id,
+    geometry: { type: "Point", coordinates: [station.lng, station.lat] },
+    properties,
+  };
+}
+
+/**
+ * A month's terciles as a pill: the most likely outcome's probability as the
+ * figure, tagged with which outcome it is, and all three in the strip.
+ *
+ * The tag is what keeps the figure readable: "45%" alone does not say whether
+ * the station leans wet or dry. Each band of the strip is coloured on its own
+ * tercile's scale at its own probability and is as tall as that probability's
+ * share, so a confident forecast reads as one dark band and an uncertain one as
+ * three pale bands of near-equal height.
+ *
+ * Null value and no strip when any of the three is missing: the pill then
+ * prints a dash over the hairline strip, as a station with no reading does.
+ */
+function tercileProperties(
+  reading: TercileReading,
+  month: SeasonalStationMonth | null,
+): Pick<StationFeatureProperties, "value" | "unit" | "strip"> {
+  const probabilities = month ? tercileProbabilities(month) : null;
+  if (!probabilities) return { value: null };
+
+  const dominant = dominantTercile(probabilities);
+  const strip: StripSegment[] = probabilities.map(({ tercile, probability }) => ({
+    // Classed, as every seasonal colour here is: PAGASA draws these as bands.
+    color: reading.scales[tercile].colorFor(probability, "step"),
+    share: probability,
+  }));
+
+  return {
+    value: `${dominant.probability.toFixed(reading.decimals)}${reading.suffix}`,
+    unit: TERCILE_TAGS[dominant.tercile],
+    strip: JSON.stringify(strip),
+  };
+}
+
+/**
+ * The strip back out of its JSON, or undefined for anything that is not one.
+ * Parsed defensively because it has been through the worker.
+ */
+function parseStrip(value: unknown): StripSegment[] | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return undefined;
+    return parsed.filter(
+      (segment): segment is StripSegment =>
+        typeof segment?.color === "string" &&
+        typeof segment?.share === "number",
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * MapLibre's property bag, read back as the pill's props.
  *
@@ -242,6 +325,7 @@ function pillProps(properties: Record<string, unknown>) {
     value: text("value") ?? null,
     unit: text("unit"),
     color: text("color"),
+    strip: parseStrip(properties.strip),
     name: text("name") ?? "",
     title: text("fullName"),
     loading: properties.loading === true,

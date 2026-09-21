@@ -7,7 +7,7 @@ import { TitleSearchBar } from "./controls/TitleSearchBar";
 import { LocationPopup } from "./overlays/LocationPopup";
 import { StationMarkers } from "./overlays/StationMarkers";
 import { ProductAccordion } from "./panels/ProductAccordion";
-import { RasterLegend } from "./panels/RasterLegend";
+import { ScaleLegend, TercileLegend } from "./panels/ScaleLegend";
 import { AdminBoundaries } from "./sources/AdminBoundaries";
 import { RasterOverlay } from "./layers/RasterOverlay";
 import { useBasemapStyle } from "./hooks/useBasemapStyle";
@@ -26,9 +26,15 @@ import {
 } from "./config/constants";
 import {
   DEFAULT_PRODUCT_ID,
+  hasOverlay,
   overlaysForVariable,
   variableKey,
 } from "./config/products";
+import {
+  seasonalReadingFor,
+  tercileReadingFor,
+} from "./config/seasonalReadings";
+import { symbologyModeFor } from "./config/rasters";
 import {
   FIT_BOUNDS_OPTIONS,
   PHILIPPINES_BOUNDS,
@@ -186,6 +192,13 @@ function MapChrome() {
   const raster = useRasterVariant();
   const legend =
     raster && (visibleLayers[LAYER_IDS.raster] ?? true) ? raster : null;
+  // A layer with no surface at all — probabilistic rainfall, temperature — is
+  // keyed by what colours its station pills instead. Not a fallback for a
+  // raster switched off: that layer still has a surface, just a hidden one.
+  const stationsOnly =
+    hasOverlay(variable, "stations") && !hasOverlay(variable, "raster");
+  const terciles = stationsOnly ? tercileReadingFor(variable) : null;
+  const stationReading = stationsOnly ? seasonalReadingFor(variable) : null;
   const [openProductId, setOpenProductId] = useState<string | null>(
     DEFAULT_PRODUCT_ID,
   );
@@ -239,7 +252,18 @@ function MapChrome() {
           loading={status === "loading"}
         />
         <div className="flex min-w-80 flex-1 justify-end">
-          {legend && <RasterLegend scale={legend.scale} mode={legend.mode} />}
+          {legend ? (
+            <ScaleLegend scale={legend.scale} mode={legend.mode} />
+          ) : terciles ? (
+            <TercileLegend scales={terciles.scales} />
+          ) : (
+            stationReading && (
+              <ScaleLegend
+                scale={stationReading.scale}
+                mode={symbologyModeFor(variable)}
+              />
+            )
+          )}
         </div>
       </div>
     </div>

@@ -263,6 +263,102 @@ export const RAINFALL_PERCENT_OF_NORMAL_SCALE = buildScale("%", [
 ]);
 
 /**
+ * The three outcomes of a probabilistic rainfall forecast: above, near and
+ * below normal. The order is the order they stack in, wettest on top, as the
+ * published legend draws them.
+ */
+export const TERCILES = ["above", "near", "below"] as const;
+export type Tercile = (typeof TERCILES)[number];
+
+/** PAGASA's own abbreviations for the three outcomes. */
+export const TERCILE_TAGS: Record<Tercile, string> = {
+  above: "AN",
+  near: "NN",
+  below: "BN",
+};
+
+/**
+ * A lighter or darker shade of a published colour, for a band the published
+ * legend has no label for.
+ *
+ * The tercile legends label thresholds, not bands: "40" sits on the edge
+ * between two swatches. So the swatch below the first threshold and the one
+ * past the last are out-of-range colours, and they are drawn one shade off
+ * their neighbour rather than copied: one chroma step lands on or next to the
+ * legend's own end swatches (#b1f8fb brightens to #e5ffff against a published
+ * #e6fcfc), and deriving them keeps each end tied to the colour beside it if
+ * that colour is ever corrected.
+ */
+const lighter = (color: string) => chroma(color).brighten(1).hex();
+const darker = (color: string) => chroma(color).darken(1).hex();
+
+/**
+ * What every tercile band means: a probability is a confidence in its outcome.
+ * The outcome itself is named once per legend row, not repeated on each band.
+ */
+const TERCILE_BAND_LABEL = "Confidence";
+
+/**
+ * One tercile's probabilities as a scale: `[0, first)` is the lighter shade of
+ * the first published colour, each threshold starts its own published band,
+ * and the last threshold starts the darker shade of the colour before it.
+ */
+function tercileScale(
+  first: number,
+  step: number,
+  colors: readonly string[],
+): ColorScale {
+  const last = first + step * colors.length;
+  const label = TERCILE_BAND_LABEL;
+  return buildScale("%", [
+    { value: 0, color: lighter(colors[0]), label },
+    ...colors.map((color, index) => ({
+      value: first + step * index,
+      color,
+      label,
+    })),
+    { value: last, color: darker(colors[colors.length - 1]), label },
+  ]);
+}
+
+/**
+ * Rainfall tercile probabilities: how likely each of the three outcomes is.
+ *
+ * One scale per tercile rather than one table, because each has its own ramp:
+ * blues for above normal, greens for near, yellow to red for below. Colours are
+ * taken from PAGASA's probabilistic forecast legend (5-point bands from 40%)
+ * by sampling each swatch. Near normal stops at 50% because PAGASA publishes
+ * nothing higher for it: the middle outcome never gets that likely.
+ *
+ * These colour station markers only. CIS publishes the terciles per station and
+ * nothing gridded, so the probabilistic layer has no surface to paint.
+ */
+export const RAINFALL_TERCILE_SCALES: Record<Tercile, ColorScale> = {
+  // Bands 40–70; ≥ 75 is the darker shade.
+  above: tercileScale(40, 5, [
+    "#b1f8fb",
+    "#8cd9fb",
+    "#6dadf8",
+    "#5076f6",
+    "#3b44f3",
+    "#3321f4",
+    "#3016ee",
+  ]),
+  // Bands 40–45; ≥ 50 is the darker shade.
+  near: tercileScale(40, 5, ["#7fac6f", "#557948"]),
+  // Bands 40–70; ≥ 75 is the darker shade.
+  below: tercileScale(40, 5, [
+    "#f7ea92",
+    "#ecb764",
+    "#e3773f",
+    "#df452c",
+    "#dd3525",
+    "#d73222",
+    "#a12217",
+  ]),
+};
+
+/**
  * Seasonal mean temperature, in °C.
  *
  * Station-only, and the one scale here with no polygon behind it: CIS publishes

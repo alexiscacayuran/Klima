@@ -1,9 +1,11 @@
 import type { SeasonalMonth, SeasonalStationMonth } from '@/api/seasonal'
-import type { ColorScale } from './colorScales'
+import type { ColorScale, Tercile } from './colorScales'
 import {
   RAINFALL_FORECAST_SCALE,
   RAINFALL_PERCENT_OF_NORMAL_SCALE,
+  RAINFALL_TERCILE_SCALES,
   SEASONAL_TEMPERATURE_SCALE,
+  TERCILES,
 } from './colorScales'
 import { parseVariableKey } from './products'
 
@@ -153,6 +155,81 @@ export function seasonalReadingFor(
     : parts.variableId
   return SEASONAL_READINGS[key] ?? null
 }
+
+/**
+ * A layer that reads the three tercile probabilities instead of one number.
+ *
+ * Kept apart from SeasonalReading because it is a different kind of statement:
+ * not one predicted value on one scale, but how likely each of three outcomes
+ * is, each on its own scale. Station-only, since the province rows carry no
+ * terciles (docs/cis-api.md §5).
+ */
+export type TercileReading = {
+  /** What the dominant probability is, for a reader. */
+  label: string
+  suffix: string
+  decimals: number
+  scales: Record<Tercile, ColorScale>
+}
+
+const TERCILE_READINGS: Record<string, TercileReading> = {
+  'rainfall:probabilistic-forecast': {
+    label: 'Tercile probability',
+    suffix: '%',
+    // Whole percent: the published bands are five points wide.
+    decimals: 0,
+    scales: RAINFALL_TERCILE_SCALES,
+  },
+}
+
+/** The tercile reading a selected layer is about, or null if it has none. */
+export function tercileReadingFor(
+  variableKey: string | null,
+): TercileReading | null {
+  const parts = parseVariableKey(variableKey)
+  if (!parts?.layerId) return null
+  return TERCILE_READINGS[`${parts.variableId}:${parts.layerId}`] ?? null
+}
+
+/** One outcome's probability, in percent. */
+export type TercileProbability = {
+  tercile: Tercile
+  probability: number
+}
+
+const TERCILE_FIELDS: Record<Tercile, SeasonalStationValueField> = {
+  above: 'rainfallProbAn',
+  near: 'rainfallProbNn',
+  below: 'rainfallProbBn',
+}
+
+/**
+ * The month's three probabilities in stacking order (above, near, below), or
+ * null unless all three are published. Two of three would draw a strip that
+ * reads as certain about the one it is missing.
+ */
+export function tercileProbabilities(
+  month: SeasonalStationMonth,
+): TercileProbability[] | null {
+  const probabilities: TercileProbability[] = []
+  for (const tercile of TERCILES) {
+    const probability = finite(month[TERCILE_FIELDS[tercile]])
+    if (probability === null) return null
+    probabilities.push({ tercile, probability })
+  }
+  return probabilities
+}
+
+/**
+ * The most likely outcome. A tie goes to the first in stacking order, which
+ * never matters in practice: the published values carry four decimals.
+ */
+export const dominantTercile = (
+  probabilities: readonly TercileProbability[],
+): TercileProbability =>
+  probabilities.reduce((best, next) =>
+    next.probability > best.probability ? next : best,
+  )
 
 /**
  * The month's number for this reading, or null when it carries none.
