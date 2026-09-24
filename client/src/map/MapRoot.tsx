@@ -6,6 +6,7 @@ import { TimelineBar } from "./controls/TimelineBar";
 import { TitleSearchBar } from "./controls/TitleSearchBar";
 import { LocationPopup } from "./overlays/LocationPopup";
 import { StationMarkers } from "./overlays/StationMarkers";
+import { PanelDock } from "./panels/PanelDock";
 import { ProductAccordion } from "./panels/ProductAccordion";
 import { ScaleLegend, TercileLegend } from "./panels/ScaleLegend";
 import { AdminBoundaries } from "./sources/AdminBoundaries";
@@ -15,6 +16,7 @@ import { useRasterVariant } from "./hooks/useRasterVariant";
 import { useTimeline } from "./hooks/useTimeline";
 import type { TimelineState } from "./hooks/useTimeline";
 import { useElasticBounds } from "./interactions/useElasticBounds";
+import { SidePanelsProvider } from "./state/SidePanelsProvider";
 import { MapSettingsProvider } from "./state/MapSettingsProvider";
 import { SelectionProvider } from "./state/SelectionProvider";
 import { useMapSettings } from "./state/useMapSettings";
@@ -213,7 +215,7 @@ function MapChrome() {
       />
 
       <ProductAccordion
-        className="absolute top-20 left-6 max-h-[calc(100%-13rem)] overflow-y-auto"
+        className="absolute top-20 left-6 max-h-[calc(100%-13rem)]"
         openProductId={openProductId}
         onOpenProductChange={setOpenProductId}
         selectedVariable={variable}
@@ -221,6 +223,14 @@ function MapChrome() {
           setVariable(variableKey(productId, variableId, layerId))
         }
       />
+
+      {/* The rail's mirror: the overview and detail panels, taking turns in
+          one slot. Same top as the rail, and a bottom at the line the rail's
+          height cap reaches — 128px up — so it stops clear of the legend in
+          the bottom-right corner exactly as the rail stops clear of the
+          timeline. A bottom rather than a max-height because the dock is a
+          row, and its panel's own cap has to resolve against a real height. */}
+      <PanelDock className="absolute top-20 right-6 bottom-32" />
 
       {/* The bottom row: the timeline on the viewport's centre line, the legend
           in the right-hand corner.
@@ -237,7 +247,8 @@ function MapChrome() {
           The right column never gets narrower than the legend, whether or not
           one is showing. Otherwise, on a viewport too narrow to centre both,
           switching to a layer with no raster would free that width and the
-          timeline would jump sideways. `min-w-80` is the legend's own `w-80`.
+          timeline would jump sideways. The minimum is the legend's own width,
+          which is the collapsed side panel's.
 
           `items-end` sits the shorter legend on the same bottom edge as the
           timeline, which is what makes it read as the corner of the chrome. */}
@@ -251,7 +262,7 @@ function MapChrome() {
           placeholder={TIMELINE_PLACEHOLDER[status]}
           loading={status === "loading"}
         />
-        <div className="flex min-w-80 flex-1 justify-end">
+        <div className="flex min-w-[360px] flex-1 justify-end">
           {legend ? (
             <ScaleLegend scale={legend.scale} mode={legend.mode} />
           ) : terciles ? (
@@ -281,6 +292,10 @@ function MapChrome() {
  * MapSettingsProvider and SelectionProvider wrap both for the same reason: the
  * rail writes the selected layer that the boundary source reads, and the
  * boundary source writes the location that the chrome will read back.
+ * SidePanelsProvider likewise: the popup and the station pills, inside <Map>,
+ * open the detail panel, which is chrome — and the popup reads it back, to
+ * stand aside while the panel is open. It sits inside SelectionProvider because
+ * the panel can only be open while there is a selection.
  *
  * The pre-redesign chrome is gone: MapToolbar, LayerPanel, BasemapToggle and
  * AdminLevelSelect have been deleted rather than left unmounted. The imported
@@ -299,12 +314,14 @@ export function MapRoot() {
   return (
     <MapSettingsProvider>
       <SelectionProvider>
-        <MapProvider>
-          <div className="relative size-full overflow-hidden">
-            <MapScene />
-            <MapChrome />
-          </div>
-        </MapProvider>
+        <SidePanelsProvider>
+          <MapProvider>
+            <div className="relative size-full overflow-hidden">
+              <MapScene />
+              <MapChrome />
+            </div>
+          </MapProvider>
+        </SidePanelsProvider>
       </SelectionProvider>
     </MapSettingsProvider>
   );

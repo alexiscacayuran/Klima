@@ -5,8 +5,15 @@ import { cn } from "@/lib/utils"
 function ScrollArea({
   className,
   children,
+  scrollbars = "vertical",
   ...props
-}: ScrollAreaPrimitive.Root.Props) {
+}: ScrollAreaPrimitive.Root.Props & {
+  /**
+   * Which bars to render. A bar has to be a sibling of the viewport rather
+   * than its content, so a caller cannot add one through `children`.
+   */
+  scrollbars?: "vertical" | "horizontal" | "both"
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -19,7 +26,8 @@ function ScrollArea({
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
-      <ScrollBar />
+      {scrollbars !== "horizontal" && <ScrollBar />}
+      {scrollbars !== "vertical" && <ScrollBar orientation="horizontal" />}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   )

@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
-import { ApiError } from '@/api/client'
 import { fetchSeasonal } from '@/api/seasonal'
 import type { SeasonalProvince } from '@/api/seasonal'
 import { cisProductForVariable } from '@/map/config/products'
 import { useSelection } from '@/map/state/useSelection'
+import { createKeyedResource } from './keyedResource'
 
 /**
  * The seasonal issuance for the pinned place.
@@ -19,7 +18,9 @@ import { useSelection } from '@/map/state/useSelection'
  *   nothing at all.
  *
  * Which leaves one request per province the user pins, and none for anything
- * else they do to it.
+ * else they do to it. Shared per province (see keyedResource), so the popup
+ * and the detail panel quoting the same place are one request between them,
+ * and pinning back to a province already seen is none.
  */
 export type SeasonalForecastState =
   /** Nothing to fetch: no pin, or a selected layer with no seasonal data behind it. */
@@ -35,9 +36,21 @@ export type SeasonalForecastState =
   | { status: 'none' }
   | { status: 'error'; error: Error }
 
+const useProvinceForecast = createKeyedResource((psgc: string) =>
+  fetchSeasonal({ psgc }).then(
+    // Matched by code rather than taken as `[0]`, because the endpoint answers
+    // about a *location* and only the caller knows the location was a single
+    // unit: a province PSGC resolves to itself and NCR — a region code sitting
+    // in the level-2 tier — resolves to itself too, so the row for this code is
+    // the one row that is about the place that was clicked. Anything else in the
+    // array would be a neighbour, and naming a neighbour's rainfall under this
+    // province's name is the one failure worth ruling out here.
+    (provinces) => provinces.find((row) => row.psgc === psgc) ?? null,
+  ),
+)
+
 export function useSeasonalForecast(): SeasonalForecastState {
   const { variable, pinned } = useSelection()
-  const [state, setState] = useState<SeasonalForecastState>({ status: 'idle' })
 
   /**
    * The whole dependency, deliberately reduced to one string.
@@ -50,46 +63,8 @@ export function useSeasonalForecast(): SeasonalForecastState {
   const psgc =
     cisProductForVariable(variable) === 'seasonal' ? (pinned?.psgc ?? null) : null
 
-  useEffect(() => {
-    if (!psgc) {
-      setState({ status: 'idle' })
-      return
-    }
-
-    const controller = new AbortController()
-    setState({ status: 'loading' })
-
-    fetchSeasonal({ psgc }, { signal: controller.signal })
-      .then((provinces) => {
-        // Matched by code rather than taken as `[0]`, because the endpoint
-        // answers about a *location* and only the caller knows the location was
-        // a single unit: a province PSGC resolves to itself and NCR — a region
-        // code sitting in the level-2 tier — resolves to itself too, so the row
-        // for this code is the one row that is about the place that was
-        // clicked. Anything else in the array would be a neighbour, and naming
-        // a neighbour's rainfall under this province's name is the one failure
-        // worth ruling out here.
-        const province = provinces.find((row) => row.psgc === psgc)
-        setState(province ? { status: 'ready', province } : { status: 'none' })
-      })
-      .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return
-        if (error instanceof ApiError && error.status === 404) {
-          setState({ status: 'none' })
-          return
-        }
-        setState({
-          status: 'error',
-          error: error instanceof Error ? error : new Error(String(error)),
-        })
-      })
-
-    // Aborting on change is also what orders the responses: pin a second
-    // province while the first is in flight and the first is cancelled, so a
-    // slow reply cannot land after a fast one and leave the card describing a
-    // place the user has moved on from.
-    return () => controller.abort()
-  }, [psgc])
-
-  return state
+  const state = useProvinceForecast(psgc)
+  return state.status === 'ready'
+    ? { status: 'ready', province: state.data }
+    : state
 }

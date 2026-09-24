@@ -175,6 +175,9 @@
      sits over the map and is expected to be paired with `backdrop-blur-md`. */
   --color-panel: var(--cis-panel);
   --color-panel-strong: var(--cis-panel-strong);
+  /* The panel's colour with the map taken out: for a surface inside a panel
+     that other content passes beneath, where any translucency ghosts it. */
+  --color-panel-solid: var(--cis-panel-solid);
   /* Opaque inset surface: search fields and other wells punched into a panel. */
   --color-well: var(--cis-well);
 
@@ -197,6 +200,24 @@
      inset top highlight, and a soft outer glow. It is what separates a filled
      button from a coloured rectangle in this system. */
   --shadow-glint: var(--cis-glint);
+
+  /* The pin's pulse while the detail panel is open (overlays/LocationPopup).
+     A ring swelling out of the dot and fading, once every two seconds — slow
+     enough to read as "this is where the panel is about" rather than as an
+     alert, which Tailwind's own `ping` (1s, to 2×) does. */
+  --animate-pin-pulse: pin-pulse 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+
+  @keyframes pin-pulse {
+    0% {
+      transform: scale(1);
+      opacity: 0.7;
+    }
+    70%,
+    100% {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
 }
 
 :root {
@@ -209,6 +230,7 @@
 
   --cis-panel: color-mix(in srgb, #ffffff 92%, transparent);
   --cis-panel-strong: color-mix(in srgb, #ffffff 96%, transparent);
+  --cis-panel-solid: #ffffff;
   --cis-well: #f4f4f5;
 
   --cis-line: #e4e4e7;
@@ -237,6 +259,7 @@
 
   --cis-panel: color-mix(in srgb, #18181b 92%, transparent);
   --cis-panel-strong: color-mix(in srgb, #18181b 96%, transparent);
+  --cis-panel-solid: #18181b;
   --cis-well: #09090b;
 
   --cis-line: #27272a;

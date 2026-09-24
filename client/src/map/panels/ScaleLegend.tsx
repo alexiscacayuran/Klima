@@ -179,7 +179,9 @@ export function MapLegend({
     <figure
       aria-label={ariaLabel}
       className={cn(
-        "pointer-events-auto flex w-80 shrink-0 flex-col gap-1 p-2",
+        // The collapsed side panel's width, so the legend and the panels above
+        // it share one column edge on the right of the map.
+        "pointer-events-auto flex w-[360px] shrink-0 flex-col gap-1 p-2",
         "rounded-panel border border-line bg-panel-strong font-cis shadow-float backdrop-blur-md",
         className,
       )}

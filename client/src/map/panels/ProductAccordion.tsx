@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { PRODUCTS, variableKey } from "@/map/config/products";
 import type { ProductDefinition, ProductVariable } from "@/map/config/products";
@@ -54,67 +55,77 @@ export function ProductAccordion({
   const idPrefix = useId();
 
   return (
-    <div
+    // The caller caps the height; the root is a flex column so the viewport
+    // (an overflow-scroll flex child) shrinks to that cap and scrolls, rather
+    // than resolving its `h-full` against an indefinite height and spilling.
+    // The scrollbar overlays the viewport, so while there is something to
+    // scroll the rail widens by a gutter for it rather than narrowing the cards.
+    // The cards' width is fixed, so widening cannot change their height and
+    // flip the overflow state back.
+    <ScrollArea
       className={cn(
-        "pointer-events-auto flex w-[250px] flex-col gap-2 font-cis",
+        "pointer-events-auto flex w-[250px] flex-col font-cis",
+        "data-has-overflow-y:w-[264px]",
         className,
       )}
     >
-      {products.map((product) => {
-        const isOpen = product.id === openProductId;
-        const panelId = `${idPrefix}-${product.id}-panel`;
-        const headerId = `${idPrefix}-${product.id}-header`;
+      <div className="flex w-[250px] flex-col gap-2">
+        {products.map((product) => {
+          const isOpen = product.id === openProductId;
+          const panelId = `${idPrefix}-${product.id}-panel`;
+          const headerId = `${idPrefix}-${product.id}-header`;
 
-        return (
-          <div
-            key={product.id}
-            className={cn(
-              "overflow-hidden rounded-panel backdrop-blur-md transition-colors duration-150",
-              isOpen
-                ? "border border-brand-medium bg-panel-strong"
-                : "border border-line bg-panel",
-            )}
-          >
-            <button
-              type="button"
-              id={headerId}
-              aria-expanded={isOpen}
-              aria-controls={panelId}
-              onClick={() => onOpenProductChange(isOpen ? null : product.id)}
+          return (
+            <div
+              key={product.id}
               className={cn(
-                "flex h-11 w-full items-center justify-between px-3.5 text-left",
-                "text-sm text-fg-heading outline-none",
-                "focus-visible:ring-3 focus-visible:ring-brand/50",
-                isOpen ? "border-b border-line font-semibold" : "font-medium",
+                "overflow-hidden rounded-panel backdrop-blur-md transition-colors duration-150",
+                isOpen
+                  ? "border border-brand-medium bg-panel-strong"
+                  : "border border-line bg-panel",
               )}
             >
-              {product.label}
-              <ChevronDown
-                aria-hidden
+              <button
+                type="button"
+                id={headerId}
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                onClick={() => onOpenProductChange(isOpen ? null : product.id)}
                 className={cn(
-                  // 150ms is the CIS accordion-chevron duration.
-                  "size-4 transition-transform duration-150",
-                  isOpen ? "rotate-180 text-brand" : "text-fg-subtle",
+                  "flex h-11 w-full items-center justify-between px-3.5 text-left",
+                  "text-sm text-fg-heading outline-none",
+                  "focus-visible:ring-3 focus-visible:ring-brand/50",
+                  isOpen ? "border-b border-line font-semibold" : "font-medium",
                 )}
-              />
-            </button>
+              >
+                {product.label}
+                <ChevronDown
+                  aria-hidden
+                  className={cn(
+                    // 150ms is the CIS accordion-chevron duration.
+                    "size-4 transition-transform duration-150",
+                    isOpen ? "rotate-180 text-brand" : "text-fg-subtle",
+                  )}
+                />
+              </button>
 
-            {/* Kept out of the tree when closed rather than hidden: the rail is
+              {/* Kept out of the tree when closed rather than hidden: the rail is
                 short, and an unmounted panel cannot be reached by tab order or
                 by a screen reader's virtual cursor. */}
-            {isOpen && (
-              <div id={panelId} role="region" aria-labelledby={headerId}>
-                <ProductVariables
-                  product={product}
-                  selectedVariable={selectedVariable}
-                  onSelectVariable={onSelectVariable}
-                />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+              {isOpen && (
+                <div id={panelId} role="region" aria-labelledby={headerId}>
+                  <ProductVariables
+                    product={product}
+                    selectedVariable={selectedVariable}
+                    onSelectVariable={onSelectVariable}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </ScrollArea>
   );
 }
 

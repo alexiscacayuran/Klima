@@ -103,3 +103,50 @@ export async function fetchStations(
  */
 export const stationShortName = (name: string): string =>
   name.split(',')[0].trim() || name
+
+/**
+ * What `/stations` leaves out — `GET /stations/:id`.
+ *
+ * One station per request, and there is no bulk form (docs/cis-api.md §7), so
+ * this is fetched for the station a user opens rather than for the layer. The
+ * fields are the ones the detail panel prints; the rest of the response is
+ * dropped here rather than carried as dead weight.
+ *
+ * `name` is the short form ("NAIA, Pasay City") and `longName` the upper-cased
+ * one; the panel titles with `/stations`' own `station` string, which is what
+ * the pill's tooltip already showed, so neither is kept.
+ */
+export type StationMeta = {
+  id: number
+  /** `synop`, `agromet`, `arg` or `radar` — free text on the wire, kept as-is. */
+  type: string | null
+  /** The PSGC of the unit the station stands in. Joins to boundary tiles. */
+  locationId: string | null
+  /** Metres above sea level. */
+  elevation: number | null
+  latDms: string | null
+  longDms: string | null
+  /** e.g. `"1949 - present"`. */
+  yearRecord: string | null
+  /** The normals the forecast's `normal*` fields are read against, e.g. `"1991-2020"`. */
+  norPeriod: string | null
+}
+
+type StationMetaRow = StationMeta & Record<string, unknown>
+
+export async function fetchStationMeta(
+  stationId: number,
+  init?: RequestInit,
+): Promise<StationMeta> {
+  const row = await apiGet<StationMetaRow>(`/stations/${stationId}`, undefined, init)
+  return {
+    id: row.id,
+    type: row.type ?? null,
+    locationId: row.locationId ?? null,
+    elevation: typeof row.elevation === 'number' ? row.elevation : null,
+    latDms: row.latDms ?? null,
+    longDms: row.longDms ?? null,
+    yearRecord: row.yearRecord ?? null,
+    norPeriod: row.norPeriod ?? null,
+  }
+}

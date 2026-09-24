@@ -1,4 +1,3 @@
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 /**
@@ -67,6 +66,14 @@ export type StationPillProps = {
    * value, which is a station with no reading this month.
    */
   loading?: boolean;
+  /**
+   * Opens the station. With it the pill is a button — focusable, with a
+   * pointer — and without it the plain card it was, so a pill is only ever
+   * announced as interactive when a click does something.
+   */
+  onClick?: () => void;
+  /** The station the detail panel is describing. */
+  selected?: boolean;
 };
 
 export function StationPill({
@@ -77,35 +84,55 @@ export function StationPill({
   name,
   title,
   loading = false,
+  onClick,
+  selected = false,
 }: StationPillProps) {
+  const Root = onClick ? "button" : "div";
+
   return (
-    <div
+    <Root
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
       title={title}
+      aria-pressed={onClick ? selected : undefined}
       className={cn(
-        "pointer-events-auto relative max-w-[8.5rem] cursor-default",
+        "pointer-events-auto relative block max-w-[8.5rem] text-left",
         // `overflow-hidden` is what gives the strip the card's own corners:
         // it is a plain rectangle, and the radius clipping it is this one.
         "overflow-hidden rounded-field",
-        "border border-line bg-panel-strong py-1 pr-3 pl-1.5 font-cis",
+        "border bg-panel-strong py-1 pr-3 pl-1.5 font-cis",
         "shadow-float backdrop-blur-md",
+        // The selected station takes the open accordion card's border — the
+        // chrome's one way of saying "this is the one being described".
+        selected ? "border-brand" : "border-line",
+        onClick
+          ? cn(
+              "cursor-pointer transition-colors duration-150 outline-none",
+              !selected && "hover:border-brand-medium",
+              "focus-visible:ring-3 focus-visible:ring-brand/50",
+            )
+          : "cursor-default",
       )}
     >
-      <p className="truncate text-[9px]/3 text-fg-body">{name}</p>
+      {/* Spans, not paragraphs: the pill can be a button, which admits
+          phrasing content only. */}
+      <span className="block truncate text-[9px]/3 text-fg-body">{name}</span>
       {loading ? (
         // The figure's own 12px line box, so the pill does not resize when the
         // number lands.
-        <div className="mt-0.5 flex h-3 items-center">
-          <Skeleton className="h-2 w-10 rounded-full bg-line" />
-        </div>
+        <span className="mt-0.5 flex h-3 items-center">
+          {/* Skeleton's own classes on a span — it renders a div. */}
+          <span className="block h-2 w-10 animate-pulse rounded-full bg-line motion-reduce:animate-none" />
+        </span>
       ) : (
-        <p className="font-cis-mono mt-0.5 text-[11px]/3 font-semibold tracking-tight text-fg-heading">
+        <span className="font-cis-mono mt-0.5 block text-[11px]/3 font-semibold tracking-tight text-fg-heading">
           {value ?? NO_VALUE}
           {value !== null && unit && (
             <span className="ml-0.5 text-[9px] font-medium text-fg-subtle">
               {unit}
             </span>
           )}
-        </p>
+        </span>
       )}
       {/*
         The class, as an edge rather than an object. Absolutely positioned so it
@@ -140,7 +167,7 @@ export function StationPill({
           style={{ backgroundColor: color ?? "var(--cis-line)" }}
         />
       )}
-    </div>
+    </Root>
   );
 }
 

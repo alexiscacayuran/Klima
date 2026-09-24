@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Layer, Marker, Source } from "@vis.gl/react-maplibre";
 import { seasonalStationMonth } from "@/api/seasonal";
 import { stationShortName } from "@/api/stations";
@@ -20,6 +20,7 @@ import { useMapInstance } from "@/map/hooks/useMapInstance";
 import { useSeasonalStations } from "@/map/hooks/useSeasonalStations";
 import { useStationClusters } from "@/map/hooks/useStationClusters";
 import { useStations } from "@/map/hooks/useStations";
+import { useSidePanels } from "@/map/state/useSidePanels";
 import { useSelection } from "@/map/state/useSelection";
 import { StationClusterPill, StationPill } from "./StationPill";
 import type { StripSegment } from "./StationPill";
@@ -80,8 +81,15 @@ type StationFeatureProperties = {
 };
 
 export function StationMarkers() {
-  const { variable, date } = useSelection();
+  const { variable, date, station, setStation } = useSelection();
+  const { showDetail } = useSidePanels();
   const map = useMapInstance();
+
+  // A selected station cannot outlive the layer that drew it — the same rule
+  // useBoundaryFocus applies to the pin. This component is mounted exactly
+  // while the selected layer has a stations overlay, so its unmount is that
+  // moment.
+  useEffect(() => () => setStation(null), [setStation]);
 
   const geometry = useStations("seasonal");
   const values = useSeasonalStations(true);
@@ -231,7 +239,14 @@ export function StationMarkers() {
             latitude={item.lat}
             anchor="center"
           >
-            <StationPill {...pillProps(item.properties)} />
+            <StationPill
+              {...pillProps(item.properties)}
+              selected={item.id === station}
+              onClick={() => {
+                setStation(item.id);
+                showDetail();
+              }}
+            />
           </Marker>
         ),
       )}

@@ -259,6 +259,19 @@ export function formatStepId(id: string): string {
 }
 
 /**
+ * A monthly step id as a column head: "2026-10" → "Oct".
+ *
+ * Month only, and only for month ids — the detail table sets six months side
+ * by side and names the year once, in its own header, the way the scrubber
+ * puts it on the first tick only. Anything else comes back untouched.
+ */
+export function formatStepMonth(id: string): string {
+  const parsed = id.length === 7 ? parseCalendarDate(id) : null
+  if (!parsed) return id
+  return MONTH.format(new Date(Date.UTC(parsed.year, parsed.month - 1, 1)))
+}
+
+/**
  * The window for a rail product, or an empty one when the map's current
  * selection has no CIS dataset behind it.
  *

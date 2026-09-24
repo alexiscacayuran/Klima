@@ -277,7 +277,7 @@ export function seasonalStationValue(
  * them: neither should reach a scale, which would classify them into the first
  * band and print a swatch for a value that does not exist.
  */
-const finite = (value: number | null | undefined): number | null =>
+export const finite = (value: number | null | undefined): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
 
 /**

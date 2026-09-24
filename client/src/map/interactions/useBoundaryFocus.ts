@@ -64,6 +64,19 @@ function probe(map: MapLibreMap, point: PointLike): BoundaryHover {
   }
 }
 
+/**
+ * Whether a pointer event landed on a DOM marker rather than on the canvas.
+ *
+ * Station pills are DOM inside the canvas container, so their native click
+ * bubbles through the map's own handler before React's root listener ever sees
+ * it. A click on a marker is the marker's: without this, clicking a station
+ * would also pin whatever province it stands in, and clicking a cluster would
+ * pin one on its way to zooming.
+ */
+const onMarker = (event: Event) =>
+  event.target instanceof Element &&
+  event.target.closest('.maplibregl-marker') !== null
+
 /** Identity of a hover, for skipping the ~60/s moves that change nothing. */
 const hoverKey = (hover: BoundaryHover) =>
   `${hover.parent ?? ''}|${hover.location?.psgc ?? ''}`
@@ -134,7 +147,7 @@ const HOVER_SETTLE_MS = 90
  */
 export function useBoundaryFocus(enabled = true) {
   const map = useRawMap()
-  const { setHover, setPinned, hover, pinned } = useSelection()
+  const { setHover, setPinned, setStation, hover, pinned } = useSelection()
   /** The reading a countdown is running towards, if one is. */
   const pending = useRef<{ key: string; timer: number } | null>(null)
 
@@ -220,7 +233,13 @@ export function useBoundaryFocus(enabled = true) {
   })
 
   useMapEvent('click', (event) => {
-    if (!map || !enabled) return
+    if (!map || onMarker(event.originalEvent)) return
+    // With no boundaries there is nothing to resolve a click to, so the only
+    // thing a click on the map itself can mean is "away from the station".
+    if (!enabled) {
+      setStation(null)
+      return
+    }
     // Deliberately a fresh hit test rather than the last hover: a click can
     // arrive from a touch or a keyboard-driven pointer that produced no
     // mousemove at all — and while a pin is held there is no hover to reuse.
@@ -253,7 +272,10 @@ export function useBoundaryFocus(enabled = true) {
     // but on none of its children is not a deselection: it is the gap between
     // two provinces, or a sliver the child tier's generalized geometry gives up
     // at this zoom.
-    if (!parent) setPinned(null)
+    if (!parent) {
+      setPinned(null)
+      setStation(null)
+    }
   })
 
   // Leaving the canvas clears the reveal — including onto a floating panel,

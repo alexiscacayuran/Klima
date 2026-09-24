@@ -95,6 +95,18 @@ export type MapSelection = {
   pinned: PinnedLocation | null
   setPinned: (location: PinnedLocation | null) => void
 
+  /**
+   * The station a click selected, by its numeric id — never a PSGC.
+   *
+   * The other thing a click can pick, and exclusive with `pinned`: the detail
+   * panel describes one subject at a time, and a pin with a station also lit
+   * would leave the map and the panel disagreeing about which one that is. The
+   * provider enforces it — setting either clears the other — so no caller has
+   * to remember to.
+   */
+  station: number | null
+  setStation: (stationId: number | null) => void
+
   /** The place the app is currently about: the pin, else what is under the pointer. */
   location: AdminLocation | null
 
@@ -137,6 +149,8 @@ export const SelectionContext = createContext<MapSelection>({
   setHover: () => {},
   pinned: null,
   setPinned: () => {},
+  station: null,
+  setStation: () => {},
   location: null,
   date: null,
   setDate: () => {},

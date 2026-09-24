@@ -2,6 +2,7 @@ import { Marker, Popup } from "@vis.gl/react-maplibre";
 import { ChevronDown } from "lucide-react";
 import { seasonalMonth } from "@/api/seasonal";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import type { SymbologyMode } from "@/map/config/colorScales";
 import { symbologyModeFor } from "@/map/config/rasters";
 import {
@@ -13,6 +14,7 @@ import { formatStepId } from "@/map/config/timeline";
 import { useProducts } from "@/map/hooks/useProducts";
 import { useSeasonalForecast } from "@/map/hooks/useSeasonalForecast";
 import type { SeasonalForecastState } from "@/map/hooks/useSeasonalForecast";
+import { useSidePanels } from "@/map/state/useSidePanels";
 import { useSelection } from "@/map/state/useSelection";
 
 /**
@@ -155,6 +157,9 @@ function readingFor(
  */
 export function LocationPopup() {
   const { pinned, setPinned, date, variable } = useSelection();
+  // Open, the panel is where this card's reading continues, so the card stands
+  // aside for it and the dot changes to say the pin is being described there.
+  const { detailOpen, showDetail } = useSidePanels();
   // Above the early return, as hooks have to be. It keys on the pin itself, so
   // with none it fetches nothing and reports `idle`.
   const forecast = useSeasonalForecast();
@@ -204,46 +209,67 @@ export function LocationPopup() {
             fill — and a dot sits *on* its point where a pin hangs above one.
             Nothing rings it: the leader line running up to the popup is what
             carries the eye off the dot now, and a halo would be a second
-            outline over a unit the boundary layer is already outlining. */}
-        <span aria-hidden className="block size-3 rounded-full bg-brand" />
+            outline over a unit the boundary layer is already outlining.
+
+            With the detail panel open there is no popup and no leader line,
+            so the dot has to hold the eye by itself: white, and pulsing. White
+            because brand is the panel's accent and the dot is no longer
+            leading into a brand-marked card; the pulse because a still white
+            dot is easy to lose over the lit fill. The hairline and shadow give
+            it an edge on the pale end of every palette, and the pulse stops
+            for a reader who has asked for less motion — the dot alone still
+            marks the point. */}
+        {detailOpen ? (
+          <span aria-hidden className="relative block size-3">
+            <span className="absolute inset-0 animate-pin-pulse rounded-full bg-white motion-reduce:hidden" />
+            <span className="relative block size-3 rounded-full bg-white shadow-float ring-1 ring-black/20" />
+          </span>
+        ) : (
+          <span aria-hidden className="block size-3 rounded-full bg-brand" />
+        )}
       </Marker>
 
-      <Popup
-        longitude={lng}
-        latitude={lat}
-        // Pinned, not derived. MapLibre chooses an anchor per position when it
-        // is left to, and this design has exactly one: the panel's left edge
-        // over the point, the panel itself up and to the right, the tail cut for
-        // that corner alone (see index.css). What it gives up is the flip
-        // MapLibre would do near a viewport edge — a pin close to the top shows
-        // its popup clipped rather than dropped below the dot.
-        anchor="bottom-left"
-        // No offset: the tail is a real element with a real height, so the gap
-        // between dot and panel *is* that height, and it is set in one place.
-        //
-        // The map's own click handler owns the pin (see useBoundaryFocus), and
-        // MapLibre's default would race it: clicking a second province would
-        // close this popup *and* set the new pin, leaving the popup shut over a
-        // live selection until something else remounted it.
-        closeOnClick={false}
-        // Closing is the one decision this component makes, and it is the whole
-        // selection that goes — the popup is a view of the pin, so a popup with
-        // no pin behind it, or a pin with the map still lit and nothing naming
-        // it, would both be states the user cannot act on.
-        onClose={() => setPinned(null)}
-        // The content sets its own width. MapLibre's 240px default is a guess
-        // about prose, and nothing in this card is prose — a place name and a
-        // class name are both single phrases that should break where the design
-        // says or not at all.
-        maxWidth="none"
-        className="klima-popup"
-      >
-        {/* A moment, a place, a reading — and no rule between any of them.
+      {/* Unmounted, not hidden, while the panel is open — and safe to: an
+          unmounted <Popup> does not fire onClose (react-maplibre skips it on
+          purpose), so the pin survives the card leaving. Closing the panel
+          mounts it again. */}
+      {!detailOpen && (
+        <Popup
+          longitude={lng}
+          latitude={lat}
+          // Pinned, not derived. MapLibre chooses an anchor per position when it
+          // is left to, and this design has exactly one: the panel's left edge
+          // over the point, the panel itself up and to the right, the tail cut for
+          // that corner alone (see index.css). What it gives up is the flip
+          // MapLibre would do near a viewport edge — a pin close to the top shows
+          // its popup clipped rather than dropped below the dot.
+          anchor="bottom-left"
+          // No offset: the tail is a real element with a real height, so the gap
+          // between dot and panel *is* that height, and it is set in one place.
+          //
+          // The map's own click handler owns the pin (see useBoundaryFocus), and
+          // MapLibre's default would race it: clicking a second province would
+          // close this popup *and* set the new pin, leaving the popup shut over a
+          // live selection until something else remounted it.
+          closeOnClick={false}
+          // Closing is the one decision this component makes, and it is the whole
+          // selection that goes — the popup is a view of the pin, so a popup with
+          // no pin behind it, or a pin with the map still lit and nothing naming
+          // it, would both be states the user cannot act on.
+          onClose={() => setPinned(null)}
+          // The content sets its own width. MapLibre's 240px default is a guess
+          // about prose, and nothing in this card is prose — a place name and a
+          // class name are both single phrases that should break where the design
+          // says or not at all.
+          maxWidth="none"
+          className="klima-popup"
+        >
+          {/* A moment, a place, a reading — and no rule between any of them.
             Each is a different kind of thing and type does the separating: the
             mono lines are readouts, the sans lines name things. A divider
             across 200px of card would be the loudest mark in it. */}
-        <div className="min-w-[11.5rem] font-cis">
-          {/* The forecast month, in the slot the coordinate used to hold.
+          <div className="min-w-[11.5rem] font-cis">
+            {/* The forecast month, in the slot the coordinate used to hold.
 
               The coordinate was the more precise fact and the less true one:
               the click resolved to a *province*, and printing the point it
@@ -257,41 +283,41 @@ export function LocationPopup() {
               of its own: the place is what the card is about, the month is
               when. `whitespace-nowrap` keeps "September 7, 2026" off a second
               line, and the right padding keeps it clear of the close button. */}
-          <div className="pr-5 font-cis-mono text-[10px]/3 font-medium tracking-[0.02em] whitespace-nowrap text-fg-subtle">
-            {date ? (
-              formatStepId(date)
-            ) : datesLoading ? (
-              // 8px plus 2px either side: the eyebrow's own 12px line box.
-              <Skeleton className="my-0.5 h-2 w-20 rounded-full bg-line" />
-            ) : (
-              NO_VALUE
-            )}
-          </div>
-          {/* A paragraph rather than a heading: the app has no heading outline
+            <div className="pr-5 font-cis-mono text-[10px]/3 font-medium tracking-[0.02em] whitespace-nowrap text-fg-subtle">
+              {date ? (
+                formatStepId(date)
+              ) : datesLoading ? (
+                // 8px plus 2px either side: the eyebrow's own 12px line box.
+                <Skeleton className="my-0.5 h-2 w-20 rounded-full bg-line" />
+              ) : (
+                NO_VALUE
+              )}
+            </div>
+            {/* A paragraph rather than a heading: the app has no heading outline
               to slot into, and a lone h2 in a transient popup would invent one
               that leads nowhere. */}
-          <p className="pr-4 text-[15px]/5 font-semibold text-fg-heading">
-            {pinned.name}
-          </p>
+            <p className="pr-4 text-[15px]/5 font-semibold text-fg-heading">
+              {pinned.name}
+            </p>
 
-          {/* The reading and the disclosure on one line, which is what removing
+            {/* The reading and the disclosure on one line, which is what removing
               the date row leaves room for — the button had a row of its own only
               because the date was sharing it. */}
-          <div className="mt-1 flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              {reading?.loading && (
-                // The value line's own 28px box, with the value and label
-                // slots where they will land, so nothing moves when the number
-                // arrives. The label is kept for screen readers.
-                <div role="status" className="flex h-7 items-center gap-2">
-                  <Skeleton className="size-3 shrink-0 rounded-[3px] bg-line" />
-                  <Skeleton className="h-5 w-16 rounded-field bg-line" />
-                  <Skeleton className="h-2.5 w-16 rounded-full bg-line" />
-                  <span className="sr-only">{reading.label}</span>
-                </div>
-              )}
-              {reading && !reading.loading && (
-                /* The reading, set in the biggest type the card holds — which
+            <div className="mt-1 flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                {reading?.loading && (
+                  // The value line's own 28px box, with the value and label
+                  // slots where they will land, so nothing moves when the number
+                  // arrives. The label is kept for screen readers.
+                  <div role="status" className="flex h-7 items-center gap-2">
+                    <Skeleton className="size-3 shrink-0 rounded-[3px] bg-line" />
+                    <Skeleton className="h-5 w-16 rounded-field bg-line" />
+                    <Skeleton className="h-2.5 w-16 rounded-full bg-line" />
+                    <span className="sr-only">{reading.label}</span>
+                  </div>
+                )}
+                {reading && !reading.loading && (
+                  /* The reading, set in the biggest type the card holds — which
                    is the point of it. The place name above says where, the
                    month says when, and this is the one line that is the answer
                    rather than the question; nothing else here is allowed to
@@ -305,8 +331,8 @@ export function LocationPopup() {
                    qualifies, and the em-dash states reuse the same slot so the
                    card cannot change height between a forecast and a gap in
                    one. */
-                <p className="flex items-center gap-2">
-                  {/* The value's place on the layer's symbology, in the ink the
+                  <p className="flex items-center gap-2">
+                    {/* The value's place on the layer's symbology, in the ink the
                       map is painting that value with — classed or interpolated,
                       whichever the layer declares (see config/rasters
                       `symbologyModeFor`). A swatch rather than colouring the
@@ -323,37 +349,36 @@ export function LocationPopup() {
                       visible: neither the near-white bottom nor the black top
                       has an edge of its own against one of the two panel
                       colours. */}
-                  <span
-                    aria-hidden
-                    className="size-3 shrink-0 rounded-[3px] ring-1 ring-line-strong ring-inset"
-                    style={{ backgroundColor: reading.color ?? "var(--cis-well)" }}
-                  />
-                  <span className="shrink-0 font-cis-mono text-[22px]/7 font-semibold tracking-tight text-fg-heading">
-                    {reading.value}
-                    {reading.unit && (
-                      <span className="ml-1 text-[12px] font-medium text-fg-subtle">
-                        {reading.unit}
-                      </span>
-                    )}
-                  </span>
-                  {/* What the number means, to the right of it: "Above normal"
+                    <span
+                      aria-hidden
+                      className="size-3 shrink-0 rounded-[3px] ring-1 ring-line-strong ring-inset"
+                      style={{
+                        backgroundColor: reading.color ?? "var(--cis-well)",
+                      }}
+                    />
+                    <span className="shrink-0 font-cis-mono text-[22px]/7 font-semibold tracking-tight text-fg-heading">
+                      {reading.value}
+                      {reading.unit && (
+                        <span className="ml-1 text-[12px] font-medium text-fg-subtle">
+                          {reading.unit}
+                        </span>
+                      )}
+                    </span>
+                    {/* What the number means, to the right of it: "Above normal"
                       is the sentence the reader came for. Only where the layer
                       names its bands — or, with no number, the reason why. */}
-                  {reading.label && (
-                    <span className="text-[11px]/4 whitespace-nowrap text-fg-body">
-                      {reading.label}
-                    </span>
-                  )}
-                </p>
-              )}
-            </div>
+                    {reading.label && (
+                      <span className="text-[11px]/4 whitespace-nowrap text-fg-body">
+                        {reading.label}
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
 
-            {/* The disclosure this card will open, standing in its corner
-                before there is anything behind it. Inert on purpose rather
-                than wired to a no-op: `disabled` keeps it out of the tab order
-                and off the pointer, so the accent below promises nothing a
-                click can fail to deliver. The hover and focus treatment
-                arrives with the panel it opens.
+              {/* The disclosure: the whole issuance for this place, in the
+                detail panel. Opens the panel if it was collapsed, since a
+                request for more on a folded panel is a request for the panel.
 
                 Solid brand, the same fill the timeline's play button carries,
                 on white rather than --color-fg-brand-strong — that step is for
@@ -364,17 +389,23 @@ export function LocationPopup() {
 
                 Pulled into the padding on both axes so the button's own
                 whitespace does not read as a fourth line of card. */}
-            <button
-              type="button"
-              disabled
-              aria-label="More detail"
-              className="-mr-0.5 -mb-0.5 flex size-5 shrink-0 items-center justify-center rounded-field bg-brand text-white shadow-glint"
-            >
-              <ChevronDown aria-hidden className="size-3.5" />
-            </button>
+              <button
+                type="button"
+                onClick={showDetail}
+                aria-label="Show detail"
+                title="Show detail"
+                className={cn(
+                  "-mr-0.5 -mb-0.5 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-field bg-brand text-white shadow-glint outline-none",
+                  "transition-colors duration-150 hover:bg-brand-strong",
+                  "focus-visible:ring-3 focus-visible:ring-brand/50",
+                )}
+              >
+                <ChevronDown aria-hidden className="size-3.5" />
+              </button>
+            </div>
           </div>
-        </div>
-      </Popup>
+        </Popup>
+      )}
     </>
   );
 }
