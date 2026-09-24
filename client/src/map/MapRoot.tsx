@@ -2,6 +2,7 @@ import { useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import { Map, MapProvider } from "@vis.gl/react-maplibre";
 
+import { MapOptions } from "./controls/MapOptions";
 import { TimelineBar } from "./controls/TimelineBar";
 import { TitleSearchBar } from "./controls/TitleSearchBar";
 import { LocationPopup } from "./overlays/LocationPopup";
@@ -21,6 +22,7 @@ import { MapSettingsProvider } from "./state/MapSettingsProvider";
 import { SelectionProvider } from "./state/SelectionProvider";
 import { useMapSettings } from "./state/useMapSettings";
 import { useSelection } from "./state/useSelection";
+import { useStationVisibility } from "./state/useStationVisibility";
 import {
   INTERACTIVE_LAYER_IDS,
   LAYER_IDS,
@@ -96,7 +98,8 @@ function MapScene() {
   // configured from outside the components that own the layers.
   const overlays = overlaysForVariable(variable);
   const hitTestable = overlays.includes("boundaries");
-  const stations = overlays.includes("stations");
+  // The layer's declaration, filtered through the user's switch in MapOptions.
+  const { visible: stations } = useStationVisibility();
   // Runs before the early return below so the hook order stays fixed; it is a
   // no-op until the map instance exists.
   useElasticBounds(SOFT_BOUNDS);
@@ -242,7 +245,11 @@ function MapChrome() {
           composition rather than two unrelated widths. The timeline keeps 600px
           while the sides have room and only then shrinks. The rail's max-height
           stops it 128px above the bottom edge and the bar's top sits at 96px,
-          so the empty left column never runs into it.
+          so the options panel in the left column, one legend-row tall, never
+          runs into it.
+
+          The left column holds MapOptions, pinned to its left edge. It is
+          `min-w-0` so the panel's width never pushes the timeline off centre.
 
           The right column never gets narrower than the legend, whether or not
           one is showing. Otherwise, on a viewport too narrow to centre both,
@@ -253,7 +260,9 @@ function MapChrome() {
           `items-end` sits the shorter legend on the same bottom edge as the
           timeline, which is what makes it read as the corner of the chrome. */}
       <div className="absolute inset-x-6 bottom-6 flex items-end gap-4">
-        <div className="flex-1" />
+        <div className="flex min-w-0 flex-1 justify-start">
+          <MapOptions />
+        </div>
         <TimelineBar
           className="min-w-0 flex-[0_1_600px]"
           steps={steps}

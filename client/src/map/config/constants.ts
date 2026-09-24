@@ -46,6 +46,14 @@ export const SOURCE_IDS = {
    */
   boundaryLabels: 'boundary-labels',
   /**
+   * The same anchors, carrying the selected layer's reading — only the units
+   * that have one. Apart from `boundaryLabels` so a layer or month change
+   * re-tiles the values and leaves the names alone: MapLibre recognises a label
+   * across an update by its text, and a name whose text never changes is never
+   * faded out and placed again.
+   */
+  boundaryLabelValues: 'boundary-label-values',
+  /**
    * Station points, clustered.
    *
    * GeoJSON rather than vector: there is no geometry in the CIS API and none in
@@ -104,6 +112,11 @@ export const LAYER_IDS = {
    * child tier when there is one and the parent tier otherwise.
    */
   boundariesLabel: 'boundaries-label',
+  /**
+   * The reading under each name. Shown only where its name is placed — see
+   * usePlacedValues in sources/AdminBoundaries.
+   */
+  boundariesLabelValue: 'boundaries-label-value',
   /**
    * Not a layer anything draws: the seam between the map's data and its labels.
    *

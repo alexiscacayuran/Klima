@@ -19,6 +19,18 @@ export type MapSettings = {
   showBoundaries: boolean
   setShowBoundaries: (visible: boolean) => void
 
+  /**
+   * Whether the user wants station pills over a layer that offers them.
+   *
+   * A preference, not the answer: a layer that publishes nothing *but* stations
+   * shows them regardless, and that override is applied where it is read (see
+   * useStationVisibility) rather than written back here. Writing it back would
+   * lose the user's choice the moment they passed through a stations-only
+   * layer on the way to another.
+   */
+  showStations: boolean
+  setShowStations: (visible: boolean) => void
+
   /** Visibility per RASTER_LAYERS id. Absent key means hidden. */
   visibleLayers: Readonly<Record<string, boolean>>
   toggleLayer: (id: string, visible: boolean) => void
@@ -33,6 +45,8 @@ export const MapSettingsContext = createContext<MapSettings>({
   setBasemap: () => {},
   showBoundaries: true,
   setShowBoundaries: () => {},
+  showStations: true,
+  setShowStations: () => {},
   visibleLayers: {},
   toggleLayer: () => {},
 })

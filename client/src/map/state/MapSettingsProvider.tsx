@@ -14,6 +14,7 @@ const initialVisibility = (): Record<string, boolean> =>
 export function MapSettingsProvider({ children }: { children: ReactNode }) {
   const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP)
   const [showBoundaries, setShowBoundaries] = useState(true)
+  const [showStations, setShowStations] = useState(true)
   const [visibleLayers, setVisibleLayers] = useState(initialVisibility)
 
   const toggleLayer = useCallback((id: string, visible: boolean) => {
@@ -29,10 +30,12 @@ export function MapSettingsProvider({ children }: { children: ReactNode }) {
       setBasemap,
       showBoundaries,
       setShowBoundaries,
+      showStations,
+      setShowStations,
       visibleLayers,
       toggleLayer,
     }),
-    [basemap, showBoundaries, visibleLayers, toggleLayer],
+    [basemap, showBoundaries, showStations, visibleLayers, toggleLayer],
   )
 
   return (

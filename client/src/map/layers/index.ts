@@ -72,6 +72,10 @@ export const LAYER_ORDER: string[] = [
   // they are elements over the canvas, not style layers, so they have no place
   // in this array and win by construction rather than by ordering.
   LAYER_IDS.boundariesLabel,
+  // The readings under those names. Placed by nothing — they neither collide
+  // nor block — so their position here decides paint order only; the name
+  // layer reserves their space (see sources/AdminBoundaries).
+  LAYER_IDS.boundariesLabelValue,
 
   // --- draws nothing, and is here so that nobody deletes it ---
 

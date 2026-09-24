@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Layer, Source } from "@vis.gl/react-maplibre";
 import type {
   Map as MapLibreMap,
+  PropertyValueSpecification,
   VectorSourceSpecification,
 } from "maplibre-gl";
 import { LAYER_IDS, SOURCE_IDS } from "@/map/config/constants";
@@ -12,18 +13,35 @@ import {
   USE_MLT,
   tileUrl,
 } from "@/map/config/martin";
-import { hasOverlay, spatialLevelForVariable } from "@/map/config/products";
+import { seasonalMonth } from "@/api/seasonal";
+import {
+  cisProductForVariable,
+  hasOverlay,
+  spatialLevelForVariable,
+} from "@/map/config/products";
+import {
+  formatSeasonalValue,
+  seasonalReadingFor,
+  seasonalValue,
+} from "@/map/config/seasonalReadings";
 import {
   ADMIN_TIERS,
   LABEL_FONT,
   LABEL_HALO,
   LABEL_HALO_BLUR,
   LABEL_HALO_WIDTH,
+  LABEL_SIZE_STOPS,
   adminTextSize,
+  adminValueSize,
+  adminValueTextSize,
   tierForAdminLevel,
 } from "@/map/config/labelTiers";
+import type { AdminTier } from "@/map/config/labelTiers";
 import { useLabelAnchors } from "@/map/hooks/useLabelAnchors";
+import { useMapEvent } from "@/map/hooks/useMapEvent";
+import { useMapImage } from "@/map/hooks/useMapImage";
 import { useRawMap } from "@/map/hooks/useMapInstance";
+import { useSeasonalProvinces } from "@/map/hooks/useSeasonalProvinces";
 import { useBoundaryFocus } from "@/map/interactions/useBoundaryFocus";
 import { NO_HOVER } from "@/map/state/selectionContext";
 import { useMapSettings } from "@/map/state/useMapSettings";
@@ -35,6 +53,8 @@ import type {
   BoundaryLevels,
 } from "@/map/types/features";
 import type { BoundaryHover } from "@/map/state/selectionContext";
+import { EMPTY_ANCHORS } from "@/map/utils/labelAnchors";
+import type { LabelAnchorCollection } from "@/map/utils/labelAnchors";
 
 /**
  * maplibre-gl 5.24 supports MLT at runtime — its style spec declares
@@ -134,7 +154,7 @@ const source = (level: AdminLevel): VectorSourceWithEncoding => ({
  */
 export function AdminBoundaries() {
   const { showBoundaries } = useMapSettings();
-  const { variable, hover, pinned } = useSelection();
+  const { variable, hover, pinned, date } = useSelection();
 
   // Memoised on the resolved *level* rather than on the selection: the reset
   // effect below identifies the tiers by object identity, and keying it off the
@@ -151,6 +171,13 @@ export function AdminBoundaries() {
   // place names are on, so a level-3 product's labels sit below a province's
   // rather than shouting at the same size. See config/labelTiers.
   const labelTier = tierForAdminLevel(spatialLevel);
+  const labelValues = useLabelValues(labelAnchors, variable, date);
+  const reserveReady = useMapImage(VALUE_RESERVE_IMAGE, drawValueReserve);
+  // Whether this layer and month put a reading under any name. Layer-wide
+  // rather than per unit, so the name layer's layout — and with it which names
+  // fit — only changes when a layer with readings is swapped for one without,
+  // never between two that both have them.
+  const showValues = reserveReady && labelValues.features.length > 0;
 
   // Whether the *product* draws boundaries at all, as opposed to whether the
   // user has switched the ones it draws off. Two different questions with the
@@ -163,6 +190,7 @@ export function AdminBoundaries() {
 
   useBoundaryFocus(drawsBoundaries);
   useResetOnLevelChange(levels);
+  usePlacedValues(showValues && showBoundaries);
 
   const focused = focusedParent(hover, pinned);
   const hoveredPsgc = hover.location?.psgc ?? "";
@@ -353,6 +381,12 @@ export function AdminBoundaries() {
         place labels — the last thing MapLibre draws, and the first thing it
         places, which is what keeps a province name from being dropped in favour
         of a town's. See LAYER_ORDER in layers/index.
+
+        The anchors as fetched and cached, never the copy carrying readings: the
+        data behind the names does not change with the layer or the month, so a
+        switch does not re-tile them, and MapLibre — which recognises a label
+        across updates by its text — has no reason to fade one out and place it
+        again. The readings are the second source below.
       */}
       <Source id={SOURCE_IDS.boundaryLabels} type="geojson" data={labelAnchors}>
         <Layer
@@ -367,6 +401,25 @@ export function AdminBoundaries() {
             // user's own toggle still turns them off.
             visibility: showBoundaries ? "visible" : "none",
             "text-field": ["get", "name"],
+            // Above the anchor, with the reading hung below it, so the seam
+            // between the two is the anchor itself whatever the name wraps to
+            // — a centred name of one line and one of two would each need the
+            // reading at a different offset.
+            "text-anchor": "bottom",
+            // Room for the reading, claimed by the name. The value layer below
+            // neither collides nor blocks, so without this nothing would stop a
+            // neighbour's name landing on a unit's number. A blank image rather
+            // than a placeholder line of text: an icon is part of the same
+            // symbol, so it is placed or dropped with the name, and it has no
+            // halo to give it away. Sized for "1234 mm" at the reading's own
+            // size (see drawValueReserve).
+            ...(showValues
+              ? {
+                  "icon-image": VALUE_RESERVE_IMAGE,
+                  "icon-anchor": "top" as const,
+                  "icon-size": valueReserveSize(labelTier),
+                }
+              : {}),
             "text-font": LABEL_FONT,
             // Names wrap rather than run: "Davao de Oro" across a province is a
             // banner, and two short lines sit inside a shape where one long one
@@ -414,24 +467,61 @@ export function AdminBoundaries() {
             // "this is an edge" in one colour at every level, but a name says
             // which level it belongs to, and colour is half of how.
             "text-color": ADMIN_TIERS[labelTier].color,
-            // One rung, where the fill has three: the fill already says which
-            // unit is which, and a name that changed weight under the pointer
-            // would be a second voice saying it. This only keeps the rest from
-            // competing with the one in play.
-            //
-            // Opacity rather than size, deliberately: text-size is a layout
-            // property, so making it depend on the hover would re-lay out the
-            // whole bucket on every pointer move. text-opacity is paint, and
-            // costs a uniform.
+            // Fully opaque, every label. The rest used to be dimmed to 0.8 so
+            // the unit in play stood out, but over the raster that let the
+            // surface bleed through the glyphs and cost the names — and now the
+            // values under them — their legibility. The fill already says which
+            // unit is in play, so the label does not have to say it again.
+            "text-opacity": 1,
+            "text-halo-color": LABEL_HALO,
+            "text-halo-width": LABEL_HALO_WIDTH,
+            "text-halo-blur": LABEL_HALO_BLUR,
+          }}
+        />
+      </Source>
+
+      {/*
+        The reading under each name, for the selected layer and month.
+
+        Its own source so that a layer or month change is a `setData` here and
+        nothing at all on the names. The cost is that MapLibre no longer places
+        the two together, so the pairing is put back by hand: this layer is
+        excused from collision entirely — the name has already reserved its
+        room — and each reading is shown only while its name is placed, which
+        usePlacedValues keeps in feature-state. A paint property, so hiding and
+        showing a reading re-lays out nothing.
+
+        `promoteId`, because feature-state is addressed by feature id and the
+        PSGC is the id both sources already agree on.
+      */}
+      <Source
+        id={SOURCE_IDS.boundaryLabelValues}
+        type="geojson"
+        data={labelValues}
+        promoteId="psgc"
+      >
+        <Layer
+          id={LAYER_IDS.boundariesLabelValue}
+          type="symbol"
+          layout={{
+            visibility: showValues && showBoundaries ? "visible" : "none",
+            "text-field": ["get", "value"],
+            "text-font": LABEL_FONT,
+            "text-anchor": "top",
+            "text-size": adminValueTextSize(labelTier),
+            "text-allow-overlap": true,
+            "text-ignore-placement": true,
+          }}
+          paint={{
+            "text-color": ADMIN_TIERS[labelTier].color,
+            // Opaque where its name is placed, for the reason the name is; gone
+            // where it is not. The default 300ms paint transition is what fades
+            // it in step with the name's own placement fade.
             "text-opacity": [
               "case",
-              [
-                "any",
-                ["==", ["get", "psgc"], pinnedPsgc],
-                ["==", ["get", "psgc"], hoveredPsgc],
-              ],
+              ["boolean", ["feature-state", "placed"], false],
               1,
-              0.8,
+              0,
             ],
             "text-halo-color": LABEL_HALO,
             "text-halo-width": LABEL_HALO_WIDTH,
@@ -461,6 +551,163 @@ function focusedParent(
 ): string | null {
   if (hover.parent) return hover.parent;
   return pinned ? enclosingParent(pinned) : null;
+}
+
+/**
+ * The anchors that have a reading for the selected layer in the scrubbed month,
+ * each carrying it printed. Units with none are left out rather than carried
+ * blank, so the value layer has nothing to draw for them.
+ *
+ * Read off the national fan-out (hooks/useSeasonalProvinces) through the same
+ * SeasonalReading the popup uses, so a label and the card for the same unit can
+ * never quote different fields or round them differently.
+ *
+ * Only for a layer that paints its units: one that publishes a province field
+ * and draws boundaries. A stations-only layer — temperature, the tercile
+ * probabilities — has no per-unit value on the map to label, so its names stay
+ * names and the fan-out is never spent for it. A unit with no row, or a null in
+ * the month, likewise keeps its name alone rather than showing a dash.
+ *
+ * A new collection only when the readings do change; `anchors` itself is never
+ * returned, since it is the names' data and must stay theirs alone.
+ */
+function useLabelValues(
+  anchors: LabelAnchorCollection,
+  variable: string | null,
+  date: string | null,
+): LabelAnchorCollection {
+  const reading = seasonalReadingFor(variable);
+  const enabled =
+    cisProductForVariable(variable) === "seasonal" &&
+    hasOverlay(variable, "boundaries") &&
+    reading?.field !== undefined;
+  const forecasts = useSeasonalProvinces(enabled);
+  const provinces =
+    enabled && forecasts.status === "ready" ? forecasts.provinces : null;
+
+  return useMemo(() => {
+    if (!provinces || !reading) return EMPTY_ANCHORS;
+
+    const features: LabelAnchorCollection["features"] = [];
+    for (const feature of anchors.features) {
+      const province = provinces.get(feature.properties.psgc);
+      const month = province ? seasonalMonth(province, date) : null;
+      const value = month ? seasonalValue(reading, month) : null;
+      if (value === null) continue;
+
+      const printed = formatSeasonalValue(reading, value);
+      features.push({
+        ...feature,
+        properties: {
+          ...feature.properties,
+          value: reading.unit ? `${printed} ${reading.unit}` : printed,
+        },
+      });
+    }
+    return { type: "FeatureCollection", features };
+  }, [anchors, provinces, reading, date]);
+}
+
+/**
+ * The blank image the name layer reserves the reading's room with.
+ *
+ * Measured in tenths of an em of the reading's type, so `icon-size` is simply
+ * that type's size over ten (see valueReserveSize): 4.5em by 1.2em holds
+ * "1234 mm" in Noto Sans Bold with a little to spare, and one line of it.
+ * Doubled for the pixelRatio useMapImage registers at, and never painted — it
+ * is transparent, and only its collision box does anything.
+ */
+const VALUE_RESERVE_IMAGE = "klima-label-value-reserve";
+const RESERVE_EM = { width: 4.5, height: 1.2 };
+
+const drawValueReserve = () =>
+  new ImageData(RESERVE_EM.width * 10 * 2, RESERVE_EM.height * 10 * 2);
+
+/** `icon-size` that scales the reserve with the reading's own text size. */
+function valueReserveSize(tier: AdminTier) {
+  const size = adminValueSize(tier);
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    ...LABEL_SIZE_STOPS.flatMap((stop, i) => [stop, size[i] / 10]),
+  ] as unknown as PropertyValueSpecification<number>;
+}
+
+/**
+ * How often, at most, the readings are re-matched to the placed names while
+ * the map is moving. Well inside the names' own 300ms fade, so a reading never
+ * visibly trails its name; the `idle` pass settles whatever the last one missed.
+ */
+const PLACEMENT_SYNC_MS = 100;
+
+/**
+ * Shows each reading only while its name is on the map.
+ *
+ * Collision is what decides which names fit at this zoom, and it runs on the
+ * name layer alone, so the only way to know its answer is to ask:
+ * queryRenderedFeatures on a symbol layer returns exactly the placed symbols.
+ * The answer is written to feature-state on the value source — a paint input,
+ * so it costs no layout — and only as a diff, because every setFeatureState
+ * asks for a repaint and a repaint is what triggers this again.
+ */
+function usePlacedValues(active: boolean) {
+  const map = useRawMap();
+  const placed = useRef(new Set<string>());
+  const source = useRef<unknown>(null);
+  const lastSync = useRef(0);
+
+  const sync = () => {
+    if (!map || !active) return;
+    const values = map.getSource(SOURCE_IDS.boundaryLabelValues);
+    if (!values || !map.getLayer(LAYER_IDS.boundariesLabel)) return;
+
+    // A style swap re-adds the source and drops its state with it, so what was
+    // written to the old one no longer stands.
+    if (source.current !== values) {
+      source.current = values;
+      placed.current = new Set();
+    }
+
+    let rendered;
+    try {
+      rendered = map.queryRenderedFeatures({
+        layers: [LAYER_IDS.boundariesLabel],
+      });
+    } catch {
+      // maplibre-gl 5.24 can throw here for a frame or two while the name
+      // layer's tiles reload — as they do when a layer with readings is swapped
+      // for one without, and the reserve comes off the layout: placement still
+      // points at the old tile's symbols, and decoding one against the new
+      // tile's empty index is "Out of bounds" in DictionaryCoder. Transient, so
+      // it is retried rather than surfaced, and the repaint is asked for
+      // because an idle map would otherwise never render again to retry on.
+      lastSync.current = 0;
+      window.setTimeout(() => map.triggerRepaint(), PLACEMENT_SYNC_MS);
+      return;
+    }
+    const next = new Set(
+      rendered.map((feature) => String(feature.properties.psgc)),
+    );
+    const target = { source: SOURCE_IDS.boundaryLabelValues };
+    for (const psgc of placed.current) {
+      if (!next.has(psgc))
+        map.setFeatureState({ ...target, id: psgc }, { placed: false });
+    }
+    for (const psgc of next) {
+      if (!placed.current.has(psgc))
+        map.setFeatureState({ ...target, id: psgc }, { placed: true });
+    }
+    placed.current = next;
+  };
+
+  useMapEvent("render", () => {
+    const now = performance.now();
+    if (now - lastSync.current < PLACEMENT_SYNC_MS) return;
+    lastSync.current = now;
+    sync();
+  });
+  useMapEvent("idle", sync);
 }
 
 const clearFeatureState = (map: MapLibreMap, sourceId: string) => {

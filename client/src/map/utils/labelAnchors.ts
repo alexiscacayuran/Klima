@@ -49,6 +49,16 @@ export type LabelAnchorProperties = {
    * more likely to be looking for.
    */
   geo_level: string
+  /**
+   * The selected layer's reading for this unit and month, printed — "312 mm",
+   * "130%". Absent when the layer publishes nothing per unit, or nothing for
+   * this one, and the label is then the name alone.
+   *
+   * Never set by the fetch below: the anchors are cached per level for the
+   * page's life, and the value changes with every layer and every month. It is
+   * stamped onto a copy in sources/AdminBoundaries.
+   */
+  value?: string
 }
 
 export type LabelAnchorCollection = {

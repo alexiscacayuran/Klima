@@ -126,7 +126,19 @@ export function RasterOverlay() {
   const visible = visibleLayers[LAYER_IDS.raster] ?? true
 
   const overlay = useControl<MapboxOverlay>(
-    () => new MapboxOverlay({ interleaved: true, layers: [] }),
+    ({ map }) =>
+      new MapboxOverlay({
+        interleaved: true,
+        layers: [],
+        // Hands the cursor back to MapLibre. Interleaved, deck draws into the
+        // map's own canvas and writes `getCursor()` onto it on *every frame* —
+        // "grab" by default — while interactions/useBoundaryFocus writes
+        // "pointer" on every mousemove. The two alternated at frame rate over
+        // any boundary, which was the pointer/hand flicker. Nothing deck draws
+        // is pickable, so it has no cursor of its own to say; echoing the
+        // current value makes its write a no-op.
+        getCursor: () => map.getCanvas().style.cursor,
+      }),
   )
 
   useEffect(() => {

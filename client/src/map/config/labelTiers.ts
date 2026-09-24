@@ -235,6 +235,21 @@ export const adminTextSize = (tier: AdminTier) =>
   sizeRamp(ADMIN_TIERS[tier].size);
 
 /**
+ * A unit's reading, set under its name: a step smaller, so it reads as a
+ * statement about the place rather than as a second place.
+ */
+export const ADMIN_VALUE_SCALE = 0.85;
+
+/** The reading's size at LABEL_SIZE_STOPS, in px. */
+export const adminValueSize = (tier: AdminTier): SizeRamp => {
+  const [a, b, c] = ADMIN_TIERS[tier].size;
+  return [a * ADMIN_VALUE_SCALE, b * ADMIN_VALUE_SCALE, c * ADMIN_VALUE_SCALE];
+};
+
+export const adminValueTextSize = (tier: AdminTier) =>
+  sizeRamp(adminValueSize(tier));
+
+/**
  * A style expression, before it is handed to a typed property slot.
  *
  * maplibre-gl re-exports `PropertyValueSpecification` but not the expression

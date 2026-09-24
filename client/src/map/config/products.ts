@@ -293,6 +293,19 @@ export const hasOverlay = (key: string | null, overlay: Overlay): boolean =>
   overlaysForVariable(key).includes(overlay);
 
 /**
+ * Whether a selected layer draws station points and nothing else.
+ *
+ * The case where the stations are not an overlay on the data but the data
+ * itself — seasonal temperature and the rainfall terciles. Hiding them would
+ * leave an empty map with a legend beside it, so the station switch is held on
+ * for these rather than offered.
+ */
+export const publishesStationsOnly = (key: string | null): boolean => {
+  const overlays = overlaysForVariable(key);
+  return overlays.length > 0 && overlays.every((overlay) => overlay === "stations");
+};
+
+/**
  * Provinces, for a product that has not declared its own resolution.
  *
  * Every CIS product that publishes polygons publishes at province level —
