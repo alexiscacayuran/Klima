@@ -72,7 +72,7 @@ export function ForecastAccordion<M extends Month>({
       key={active}
       multiple
       defaultValue={defaultOpen}
-      className="gap-2 border-t border-line p-2.5"
+      className="gap-1 border-t border-line px-2.5 pb-2.5"
     >
       {groups.map((group) => {
         const Icon = ICONS.get(group.variableId);
@@ -80,18 +80,18 @@ export function ForecastAccordion<M extends Month>({
           <AccordionItem
             key={group.variableId}
             value={group.variableId}
-            // One custom property, so the border, title and icon cannot drift
-            // apart; the classes below read it.
+            // One custom property, so the title and icon cannot drift apart;
+            // the classes below read it. The table's outline takes the same
+            // colour.
             style={{ "--variable": group.accent } as CSSProperties}
-            className={cn(
-              // The rail's card: panel fill, hairline, panel radius. The fill
-              // matches the table's sticky label column, which has to be opaque.
-              "overflow-hidden rounded-panel border border-(--variable) bg-panel-strong",
-            )}
+            // No fill or outline of its own: the table's outline is the only
+            // frame. Nor the base item's divider — the gap already separates
+            // the variables.
+            className="not-last:border-b-0"
           >
             <AccordionTrigger
               className={cn(
-                "h-10 items-center justify-start gap-2 rounded-none px-3 py-0 text-[13px] font-semibold text-(--variable)",
+                "h-10 items-center justify-start gap-2 px-0 py-0 text-[13px] font-semibold text-(--variable)",
                 "hover:no-underline focus-visible:ring-brand/50",
               )}
             >
@@ -100,10 +100,11 @@ export function ForecastAccordion<M extends Month>({
             </AccordionTrigger>
             <AccordionContent className="pb-0">
               <ForecastTable
-                rows={group.rows}
+                sections={group.sections}
                 months={months}
                 currentDate={date}
                 scrollSync={scrollSync}
+                accent={group.accent}
               />
             </AccordionContent>
           </AccordionItem>

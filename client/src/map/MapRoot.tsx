@@ -3,6 +3,7 @@ import * as maplibregl from "maplibre-gl";
 import { Map, MapProvider } from "@vis.gl/react-maplibre";
 
 import { MapOptions } from "./controls/MapOptions";
+import { StepSnapshot } from "./controls/StepSnapshot";
 import { TimelineBar } from "./controls/TimelineBar";
 import { TitleSearchBar } from "./controls/TitleSearchBar";
 import { LocationPopup } from "./overlays/LocationPopup";
@@ -14,6 +15,7 @@ import { AdminBoundaries } from "./sources/AdminBoundaries";
 import { RasterOverlay } from "./layers/RasterOverlay";
 import { useBasemapStyle } from "./hooks/useBasemapStyle";
 import { useRasterVariant } from "./hooks/useRasterVariant";
+import { useSnapshotSource } from "./hooks/useSnapshotSource";
 import { useTimeline } from "./hooks/useTimeline";
 import type { TimelineState } from "./hooks/useTimeline";
 import { useElasticBounds } from "./interactions/useElasticBounds";
@@ -39,6 +41,7 @@ import {
   tercileReadingFor,
 } from "./config/seasonalReadings";
 import { symbologyModeFor } from "./config/rasters";
+import { SNAPSHOT_ASPECT } from "./utils/snapshotGeometry";
 import {
   FIT_BOUNDS_OPTIONS,
   PHILIPPINES_BOUNDS,
@@ -208,6 +211,9 @@ function MapChrome() {
     DEFAULT_PRODUCT_ID,
   );
   const [query, setQuery] = useState("");
+  // What the timeline's cards are thumbnails of: the surface, the choropleth,
+  // or nothing — in which case the bar offers no strip at all.
+  const snapshots = useSnapshotSource();
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
@@ -246,7 +252,11 @@ function MapChrome() {
           while the sides have room and only then shrinks. The rail's max-height
           stops it 128px above the bottom edge and the bar's top sits at 96px,
           so the options panel in the left column, one legend-row tall, never
-          runs into it.
+          runs into it. With its map previews open the bar grows upward by a
+          card's height — the strip sits under the rail, so the rail rises with
+          it. It stays in the centre column, so that only reaches the product
+          rail on a viewport narrow enough to squeeze the left column to
+          nothing.
 
           The left column holds MapOptions, pinned to its left edge. It is
           `min-w-0` so the panel's width never pushes the timeline off centre.
@@ -270,6 +280,20 @@ function MapChrome() {
           onChange={setDate}
           placeholder={TIMELINE_PLACEHOLDER[status]}
           loading={status === "loading"}
+          preview={
+            snapshots
+              ? {
+                  render: (step) => (
+                    <StepSnapshot
+                      source={snapshots}
+                      stepId={step.id}
+                      selected={step.id === date}
+                    />
+                  ),
+                  aspect: SNAPSHOT_ASPECT,
+                }
+              : undefined
+          }
         />
         <div className="flex min-w-[360px] flex-1 justify-end">
           {legend ? (

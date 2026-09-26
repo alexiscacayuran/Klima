@@ -1,13 +1,6 @@
-import { VectorTile } from '@mapbox/vector-tile'
-import Pbf from 'pbf'
 import type { Point } from 'geojson'
-import {
-  BOUNDARIES_SOURCE_LAYER,
-  MARTIN_SOURCES,
-  tileUrlAt,
-} from '@/map/config/martin'
-import { PHILIPPINES_BOUNDS } from '@/map/config/viewState'
 import type { AdminLevel } from '@/map/types/features'
+import { NATIONAL_TILE, fetchNationalLayer } from './nationalTile'
 
 /**
  * One label point per administrative unit.
@@ -185,55 +178,6 @@ function toLngLat(
   ]
 }
 
-const lngToTileX = (lng: number, z: number) => ((lng + 180) / 360) * 2 ** z
-
-const latToTileY = (lat: number, z: number) => {
-  const sin = Math.sin((lat * Math.PI) / 180)
-  return (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * 2 ** z
-}
-
-/**
- * The deepest single tile that still holds the whole country.
- *
- * One tile is the requirement, not an optimisation: a unit split across two
- * tiles arrives as two features with two largest-parts and would be labelled
- * twice, which is half of the bug this file exists to remove. Deepest, because
- * a tile's 4096 coordinate units are spread over its own span — the smaller the
- * tile, the finer the geometry it can express.
- *
- * For PHILIPPINES_BOUNDS this resolves to z4/13/7: about 600m per unit, against
- * a label that only has to land inside a province.
- */
-function coveringTile(bounds: readonly [number, number][], maxZoom: number) {
-  const [[west, south], [east, north]] = bounds
-  let deepest = { z: 0, x: 0, y: 0 }
-
-  for (let z = 0; z <= maxZoom; z++) {
-    const x = Math.floor(lngToTileX(west, z))
-    const y = Math.floor(latToTileY(north, z))
-    if (x !== Math.floor(lngToTileX(east, z))) break
-    if (y !== Math.floor(latToTileY(south, z))) break
-    deepest = { z, x, y }
-  }
-
-  return deepest
-}
-
-/**
- * Deep enough to be precise, shallow enough that the tile is one request.
- *
- * Capped well below the source's own maxzoom because the cap is not what
- * decides the answer — the country's own extent is — and leaving it open would
- * only invite a future, smaller `bounds` to pick a zoom whose tile the server
- * generalises out of existence.
- */
-const MAX_ANCHOR_ZOOM = 6
-
-const ANCHOR_TILE = coveringTile(
-  PHILIPPINES_BOUNDS as readonly [number, number][],
-  MAX_ANCHOR_ZOOM,
-)
-
 /**
  * One point per unit at `level`, from a single tile.
  *
@@ -242,11 +186,11 @@ const ANCHOR_TILE = coveringTile(
  * the alternative — the whole feature's centre — puts "Palawan" in the Sulu Sea
  * and "Romblon" in open water between its three islands.
  *
- * Every level the server answers at ANCHOR_TILE's zoom works here, and that is
+ * Every level the server answers at NATIONAL_TILE's zoom works here, and that is
  * the whole requirement — there is no list of supported levels to keep in step
  * with the server. There was one, and it was wrong the moment Martin began
  * serving `adm3_municities` at every zoom: level 3 used to return an empty tile
- * below z8 while ANCHOR_TILE sits at z4, so the only honest answer for it was no
+ * below z8 while NATIONAL_TILE sits at z4, so the only honest answer for it was no
  * anchors at all, and the gate that said so then went on saying it afterwards.
  * A level the server does not carry at this zoom now yields an empty tile and,
  * from that, no labels — the same outcome, arrived at by asking rather than by
@@ -255,7 +199,7 @@ const ANCHOR_TILE = coveringTile(
  * What one low-zoom tile does cost is the tail of the smallest units. Martin
  * generalizes below z9, and generalization drops features it cannot represent:
  * level 3 arrives as 1214 features at z0, 1634 at z2 and 1641 at z4, against the
- * 1642 rows docs/vector-tiles.md describes. So ANCHOR_TILE being as deep as it
+ * 1642 rows docs/vector-tiles.md describes. So NATIONAL_TILE being as deep as it
  * can be is what keeps that tail to a single municipality, and that municipality
  * goes unlabelled — its boundary is still drawn, still hit-tested and still
  * selectable, because those read the tile for the zoom on screen rather than
@@ -265,18 +209,7 @@ export async function fetchLabelAnchors(
   level: AdminLevel,
   init?: RequestInit,
 ): Promise<LabelAnchorCollection> {
-  const response = await fetch(
-    tileUrlAt(MARTIN_SOURCES.adminBoundaries, ANCHOR_TILE, { level }),
-    init,
-  )
-  if (!response.ok) {
-    throw new Error(`Label anchors for level ${level}: ${response.status}`)
-  }
-
-  const buffer = await response.arrayBuffer()
-  const layer = new VectorTile(new Pbf(new Uint8Array(buffer))).layers[
-    BOUNDARIES_SOURCE_LAYER
-  ]
+  const layer = await fetchNationalLayer(level, init)
   if (!layer) return EMPTY_ANCHORS
 
   const features: LabelAnchorCollection['features'] = []
@@ -294,7 +227,7 @@ export async function fetchLabelAnchors(
       type: 'Feature',
       geometry: {
         type: 'Point',
-        coordinates: toLngLat(pointOnSurface(largest), ANCHOR_TILE, layer.extent),
+        coordinates: toLngLat(pointOnSurface(largest), NATIONAL_TILE, layer.extent),
       },
       properties: {
         psgc: String(feature.properties.psgc),

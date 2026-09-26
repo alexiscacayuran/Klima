@@ -1,5 +1,4 @@
 import { useState } from "react";
-import chroma from "chroma-js";
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { TooltipContent } from "@/components/ui/tooltip";
 import { TERCILE_TAGS, TERCILES } from "@/map/config/colorScales";
@@ -10,6 +9,7 @@ import type {
   Tercile,
 } from "@/map/config/colorScales";
 import { cn } from "@/lib/utils";
+import { inkOn } from "@/map/utils/ink";
 
 /** One cell of the bar, whichever mode drew it. */
 type Cell = {
@@ -21,25 +21,6 @@ type Cell = {
   /** The class this cell *is*, in step mode; null along a ramp. */
   band: ScaleClass | null;
 };
-
-/**
- * The two inks a label can take. Fixed rather than theme tokens: they are read
- * against the data colours, which do not change with the theme.
- */
-const INK_LIGHT = "#ffffff";
-const INK_DARK = "#09090b";
-
-/**
- * Whichever ink contrasts more with the cell.
- *
- * Chosen per cell rather than one ink with a halo: the tables run from
- * near-white through yellow to pure black, so no single ink reads on all of
- * them, and a text shadow legible on #e1e1e1 is a smudge on #002573.
- */
-const inkOn = (color: string) =>
-  chroma.contrast(color, INK_LIGHT) >= chroma.contrast(color, INK_DARK)
-    ? INK_LIGHT
-    : INK_DARK;
 
 /**
  * A number as the cell prints it: one decimal at most, and none when it is
@@ -85,9 +66,7 @@ function cellsFor(scale: ColorScale, mode: SymbologyMode): Cell[] {
     return {
       key: `${lower.value}-${upper.value}`,
       label:
-        index === 0
-          ? `<${formatValue(upper.value)}`
-          : formatValue(lower.value),
+        index === 0 ? `<${formatValue(upper.value)}` : formatValue(lower.value),
       // The colour mid-cell, which is where the label sits.
       color: scale.colorAt((lower.value + upper.value) / 2),
       band: null,
@@ -199,10 +178,7 @@ export function MapLegend({
         return (
           <div
             key={row.key}
-            className={cn(
-              "flex items-center gap-1.5",
-              stacked ? "h-4" : "h-5",
-            )}
+            className={cn("flex items-center gap-1.5", stacked ? "h-4" : "h-5")}
           >
             {/* A fixed slot, so "%" and "mm" — or AN, NN, BN — start every bar
                 at the same x. */}

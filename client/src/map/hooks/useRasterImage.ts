@@ -76,6 +76,17 @@ const NOT_PUBLISHED = null
  * suggest anything is wrong (§5).
  */
 async function load(url: string): Promise<RasterImage | null> {
+  const metadata = await loadRasterMetadata(url)
+  if (!metadata) return NOT_PUBLISHED
+
+  const image = await loadTextureData(url)
+  return { image, ...metadata }
+}
+
+/** What the `HEAD` says: everything about an image except its pixels. */
+export type RasterMetadata = Omit<RasterImage, 'image'>
+
+async function loadMetadata(url: string): Promise<RasterMetadata | null> {
   const head = await fetch(url, { method: 'HEAD' })
   if (head.status === 404) return NOT_PUBLISHED
   if (!head.ok) {
@@ -95,12 +106,33 @@ async function load(url: string): Promise<RasterImage | null> {
     throw new Error(`Raster is missing its georeferencing metadata: ${url}`)
   }
 
-  const image = await loadTextureData(url)
   return {
-    image,
     bounds: bounds as [number, number, number, number],
     imageUnscale: imageUnscale as [number, number],
   }
+}
+
+/**
+ * Cached apart from the pixels, because it has two readers: the surface, which
+ * wants it beside a full-resolution texture, and the timeline's snapshots,
+ * which want it beside a thumbnail and never decode the texture at all. One
+ * `HEAD` per image serves both.
+ */
+const metadataCache = new Map<string, Promise<RasterMetadata | null>>()
+
+/** Bounds and quantisation range for an image, or null if it is not published. */
+export function loadRasterMetadata(
+  url: string,
+): Promise<RasterMetadata | null> {
+  const cached = metadataCache.get(url)
+  if (cached) return cached
+
+  const pending = loadMetadata(url).catch((error: unknown) => {
+    metadataCache.delete(url)
+    throw error
+  })
+  metadataCache.set(url, pending)
+  return pending
 }
 
 /** A numeric JSON array from a response header, or null if absent or malformed. */

@@ -126,7 +126,7 @@ function PlaceDetail({ name }: { name: string }) {
           // A pin under a product CIS publishes no province forecast for.
           <Notice>No detail for this product yet.</Notice>
         ) : forecast.status === "loading" ? (
-          <TableSkeleton rows={PROVINCE_GROUPS[0].rows.length} />
+          <TableSkeleton rows={PROVINCE_GROUPS[0].sections.flat().length} />
         ) : forecast.status === "error" ? (
           <Notice>Forecast unavailable.</Notice>
         ) : forecast.status === "none" ? (
@@ -170,7 +170,7 @@ function StationDetail({ stationId }: { stationId: number }) {
       />
       <TabsContent value="table">
         {forecasts.status === "loading" ? (
-          <TableSkeleton rows={STATION_GROUPS[0].rows.length} />
+          <TableSkeleton rows={STATION_GROUPS[0].sections.flat().length} />
         ) : forecasts.status === "error" ? (
           <Notice>Forecast unavailable.</Notice>
         ) : !forecast ? (
