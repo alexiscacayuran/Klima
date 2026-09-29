@@ -7,11 +7,20 @@
  */
 
 /**
- * Id of the single <Map> instance. Components outside <Map> (but inside
+ * Id of the main <Map>. Components outside every <Map> (but inside
  * <MapProvider>) reach it as `useMap()[MAP_ID]`; `useMap().current` only
- * resolves for descendants of <Map>.
+ * resolves for descendants of a <Map>. hooks/useMapInstance does that lookup.
  */
 export const MAP_ID = 'main'
+
+/**
+ * Id of the second <Map>, the magnified Kalayaan inset (overlays/KalayaanInset).
+ *
+ * It draws the same sources and layers under the same ids as the main map,
+ * which is safe because a style is per map. Only the ids in <MapProvider>
+ * have to differ.
+ */
+export const INSET_MAP_ID = 'kalayaan'
 
 /**
  * Client-side source ids.

@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import {
   Accordion,
   AccordionContent,
@@ -6,35 +6,39 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
-import type { DetailGroup } from "@/map/config/detailRows";
 import {
   DEFAULT_PRODUCT_ID,
   findProduct,
   parseVariableKey,
 } from "@/map/config/products";
 import { useSelection } from "@/map/state/useSelection";
-import { ForecastTable, useScrollSync } from "./ForecastTable";
 
-type Month = { id: string; date: string };
+/** What a card needs to know about its variable: which, and in what colour. */
+type Card = {
+  /** The catalogue's id (see PRODUCTS) — how the selected card is found. */
+  variableId: string;
+  label: string;
+  /** The card's title and icon, and its body's outline. */
+  accent: string;
+};
 
-export type ForecastAccordionProps<M extends Month> = {
-  groups: readonly DetailGroup<M>[];
-  /** The issuance's months, earliest first — every card's columns. */
-  months: readonly M[];
+export type ForecastAccordionProps<G extends Card> = {
+  groups: readonly G[];
+  /** A card's body: its variable as a table, or as charts. */
+  children: (group: G) => ReactNode;
 };
 
 /**
  * An issuance as one card per variable — Rainfall, Temperature — each a
- * disclosure over its own table.
+ * disclosure over what the tab shows of it: a table on the Table tab, charts
+ * on the Chart tab. The two tabs are this one shell, so a card looks and opens
+ * the same whichever the reader is on.
  *
  * The card for the variable the rail has selected opens; the rest start
  * closed, so the panel leads with what the map is painting and the other
  * variables are one click away rather than a scroll past it. Any number may be
  * open at once: comparing rainfall with temperature month by month is a
  * reasonable thing to want.
- *
- * The open cards are one grid: the same columns, scrolled sideways together,
- * and a card opened later joins at the position the others are already at.
  *
  * Which cards are open resets when the rail's variable changes — picking
  * Temperature on the rail is asking about temperature — but not when the
@@ -49,12 +53,11 @@ const ICONS = new Map(
   ]),
 );
 
-export function ForecastAccordion<M extends Month>({
+export function ForecastAccordion<G extends Card>({
   groups,
-  months,
-}: ForecastAccordionProps<M>) {
-  const { variable, date } = useSelection();
-  const scrollSync = useScrollSync();
+  children,
+}: ForecastAccordionProps<G>) {
+  const { variable } = useSelection();
   const selected = parseVariableKey(variable);
   // The detail panel describes the seasonal issuance; a variable of another
   // product says nothing about which of these cards is the relevant one.
@@ -81,12 +84,13 @@ export function ForecastAccordion<M extends Month>({
             key={group.variableId}
             value={group.variableId}
             // One custom property, so the title and icon cannot drift apart;
-            // the classes below read it. The table's outline takes the same
+            // the classes below read it. The body's outline takes the same
             // colour.
             style={{ "--variable": group.accent } as CSSProperties}
-            // No fill or outline of its own: the table's outline is the only
+            // No fill or outline of its own: the body's outline is the only
             // frame. Nor the base item's divider — the gap already separates
-            // the variables.
+            // the variables. Padded below, so each card closes with the same
+            // space, the last one included.
             className="not-last:border-b-0"
           >
             <AccordionTrigger
@@ -99,13 +103,7 @@ export function ForecastAccordion<M extends Month>({
               {group.label}
             </AccordionTrigger>
             <AccordionContent className="pb-0">
-              <ForecastTable
-                sections={group.sections}
-                months={months}
-                currentDate={date}
-                scrollSync={scrollSync}
-                accent={group.accent}
-              />
+              {children(group)}
             </AccordionContent>
           </AccordionItem>
         );

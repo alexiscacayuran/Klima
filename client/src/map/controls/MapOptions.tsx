@@ -1,5 +1,5 @@
 import { useId } from "react";
-import { MapPinMinus } from "lucide-react";
+import { MapPinMinus, PictureInPicture2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -8,6 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useMapSettings } from "@/map/state/useMapSettings";
 import { useStationVisibility } from "@/map/state/useStationVisibility";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils";
  */
 export function MapOptions({ className }: { className?: string }) {
   const stations = useStationVisibility();
+  const { showKalayaanInset, setShowKalayaanInset } = useMapSettings();
 
   return (
     <div
@@ -51,6 +53,14 @@ export function MapOptions({ className }: { className?: string }) {
               ? "This layer publishes station data only"
               : undefined
         }
+      />
+      {/* Never disabled: every layer draws something on the island, if only
+          its name. */}
+      <OptionSwitch
+        label="Kalayaan inset"
+        icon={PictureInPicture2}
+        checked={showKalayaanInset}
+        onCheckedChange={setShowKalayaanInset}
       />
     </div>
   );

@@ -175,9 +175,17 @@ export type SeasonalStationMonth = {
   tmaxHigh: number | null
   tminLow: number | null
   tminHigh: number | null
-  normalRainfall: number | null
-  normalTmax: number | null
-  normalTmin: number | null
+  /**
+   * The station's 1991–2020 monthly normals, each named after the quantity it
+   * qualifies — the spelling `monthlyStats` and `/historical-station` in daily
+   * monitoring use. They were `normalRainfall`, `normalTmax` and `normalTmin`
+   * until CIS renamed them (docs/cis-api.md §5).
+   */
+  rainfallNormal: number | null
+  tmaxNormal: number | null
+  tminNormal: number | null
+  /** The baseline `tmeanAnomaly` is measured against. */
+  tmeanNormal: number | null
 }
 
 /**

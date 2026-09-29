@@ -194,6 +194,7 @@ export const PRODUCTS: readonly ProductDefinition[] = [
   },
   { id: "enso", label: "El Niño / La Niña" },
   { id: "projections", label: "Climate Projections" },
+  { id: "monitoring", label: "Climate Monitoring" },
   { id: "climatology", label: "Climatology" },
 ];
 
@@ -302,7 +303,9 @@ export const hasOverlay = (key: string | null, overlay: Overlay): boolean =>
  */
 export const publishesStationsOnly = (key: string | null): boolean => {
   const overlays = overlaysForVariable(key);
-  return overlays.length > 0 && overlays.every((overlay) => overlay === "stations");
+  return (
+    overlays.length > 0 && overlays.every((overlay) => overlay === "stations")
+  );
 };
 
 /**

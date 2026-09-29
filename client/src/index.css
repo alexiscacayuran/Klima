@@ -357,6 +357,37 @@
    two stylesheets is not something to rely on.
    --------------------------------------------------------------------------- */
 
+/* The Kalayaan inset cannot be dragged (map/overlays/KalayaanInset), so it
+   must not offer MapLibre's grab hand. Unlayered, for the reason given above,
+   and the canvas's own inline `pointer` over a unit still wins, being set on
+   the element rather than inherited. */
+.klima-inset .maplibregl-canvas-container.maplibregl-interactive,
+.klima-inset .maplibregl-canvas-container.maplibregl-interactive:active {
+  cursor: default;
+}
+
+/* A pin on the island is drawn in the inset, and its card is wider than the
+   inset is. MapLibre clips everything to the map's box; here the card has to
+   hang out past it, so the clip comes off and the canvas, which fills the box
+   exactly, takes the frame's inner rounding itself. */
+.klima-inset .maplibregl-map {
+  overflow: visible;
+}
+
+.klima-inset .maplibregl-canvas {
+  border-radius: 5px;
+}
+
+/* Over the Kalayaan inset (map/overlays/KalayaanInset), which is a sibling of
+   the main map and so later in the DOM: without a z-index of its own, the card
+   for a pin near the island — on Palawan, say — would be drawn under the
+   frame. The map container opens no stacking context, so this competes with
+   the inset directly and stays under the chrome's z-10. The pin's dot takes the
+   step above (see LocationPopup). */
+.klima-popup {
+  z-index: 1;
+}
+
 .klima-popup .maplibregl-popup-content {
   /* The map container sets `font: 12px/20px Helvetica Neue` on everything
      inside it. The family is restored by `font-cis` on the content itself; the

@@ -6,7 +6,7 @@ import {
   MARTIN_SOURCES,
   tileUrlAt,
 } from '@/map/config/martin'
-import { PHILIPPINES_BOUNDS } from '@/map/config/viewState'
+import { KALAYAAN_BOUNDS, PHILIPPINES_BOUNDS } from '@/map/config/viewState'
 import type { AdminLevel } from '@/map/types/features'
 
 /**
@@ -75,6 +75,20 @@ export const NATIONAL_TILE = coveringTile(
   PHILIPPINES_BOUNDS as readonly [number, number][],
   MAX_NATIONAL_ZOOM,
 )
+
+/**
+ * Tiles holding the units the national tile generalises away.
+ *
+ * There is one such unit, and it is not an accident of the data: Kalayaan is
+ * a single island about a kilometre across, and at z4 Martin drops it from
+ * every level. Its polygon returns from z5 on. So it is read from a tile deep
+ * enough to keep it: at z8 a tile unit is about 40m, so the anchor lands on
+ * the island even at the inset's zoom. A tile here only adds units the
+ * national tile did not already carry.
+ */
+export const OUTLYING_TILES: TileAddress[] = [
+  coveringTile(KALAYAAN_BOUNDS, 8),
+]
 
 /**
  * The boundaries layer of a whole-country tile at `level`, or null when the

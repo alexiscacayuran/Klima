@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { BasemapId } from '@/map/config/styles'
-import { DEFAULT_BASEMAP } from '@/map/config/styles'
+import { useTheme } from '@/components/theme/useTheme'
+import { THEME_BASEMAP } from '@/map/config/styles'
 import { RASTER_LAYERS } from '@/map/layers'
 import { MapSettingsContext } from './mapSettingsContext'
 
@@ -12,9 +12,11 @@ const initialVisibility = (): Record<string, boolean> =>
   )
 
 export function MapSettingsProvider({ children }: { children: ReactNode }) {
-  const [basemap, setBasemap] = useState<BasemapId>(DEFAULT_BASEMAP)
+  const { theme } = useTheme()
+  const basemap = THEME_BASEMAP[theme]
   const [showBoundaries, setShowBoundaries] = useState(true)
   const [showStations, setShowStations] = useState(true)
+  const [showKalayaanInset, setShowKalayaanInset] = useState(false)
   const [visibleLayers, setVisibleLayers] = useState(initialVisibility)
 
   const toggleLayer = useCallback((id: string, visible: boolean) => {
@@ -27,15 +29,23 @@ export function MapSettingsProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       basemap,
-      setBasemap,
       showBoundaries,
       setShowBoundaries,
       showStations,
       setShowStations,
+      showKalayaanInset,
+      setShowKalayaanInset,
       visibleLayers,
       toggleLayer,
     }),
-    [basemap, showBoundaries, showStations, visibleLayers, toggleLayer],
+    [
+      basemap,
+      showBoundaries,
+      showStations,
+      showKalayaanInset,
+      visibleLayers,
+      toggleLayer,
+    ],
   )
 
   return (

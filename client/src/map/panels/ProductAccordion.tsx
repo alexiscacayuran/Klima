@@ -1,13 +1,17 @@
 import { useId, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PRODUCTS, variableKey } from "@/map/config/products";
+import { PRODUCTS, productIdFromKey, variableKey } from "@/map/config/products";
 import type { ProductDefinition, ProductVariable } from "@/map/config/products";
+import { PanelIconButton, SidePanel } from "./SidePanel";
 
 type ProductAccordionProps = {
   /** Defaults to the full catalogue; injectable so the rail is testable. */
   products?: readonly ProductDefinition[];
+  /** The panel is up; when it is not, a button naming the product stands in. */
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
   /** The single expanded product, or null for all-collapsed. */
   openProductId: string | null;
   onOpenProductChange: (productId: string | null) => void;
@@ -18,6 +22,7 @@ type ProductAccordionProps = {
     variableId: string,
     layerId?: string,
   ) => void;
+  /** Placement and height cap, applied to the panel or the button alike. */
   className?: string;
 };
 
@@ -35,17 +40,24 @@ type ProductAccordionProps = {
  * aria-expanded rather than a disclosure widget, and an open product panel is a
  * labelled region.
  *
- * Collapsed products are separate floating cards with a gap between them, and
- * the open one is a single bordered card containing its variables; that is the
- * design, and it is also what makes the open product findable at a glance
- * without a scrollbar in the way.
+ * All the products share one panel, a hairline between each, drawn in the same
+ * SidePanel frame as the overview and detail panels, so the chrome's two edges
+ * are one object on either side. Like the overview it can be closed, and what
+ * it leaves behind is a button in the same corner, naming the product the map
+ * is showing — so with the rail put away the map still says what it is of, and
+ * the one click that brings the rail back is on that name. Widening the detail
+ * panel closes it too (see SidePanelsState.detailExpanded).
  *
  * Selection state is owned by the caller so the map and the rail cannot disagree
- * about what is being painted. Which variable group is *expanded* is not — it
- * changes nothing outside this panel, so it lives in the group itself.
+ * about what is being painted, and so is whether the rail is open, since the
+ * right-hand panels can close it. Which variable group is *expanded* is not —
+ * it changes nothing outside this panel, so it lives in the group itself.
  */
 export function ProductAccordion({
   products = PRODUCTS,
+  open,
+  onOpen,
+  onClose,
   openProductId,
   onOpenProductChange,
   selectedVariable,
@@ -54,37 +66,44 @@ export function ProductAccordion({
 }: ProductAccordionProps) {
   const idPrefix = useId();
 
+  if (!open) {
+    const active = selectedVariable
+      ? products.find(
+          (product) => product.id === productIdFromKey(selectedVariable),
+        )
+      : undefined;
+
+    return (
+      <ProductsButton
+        label={active?.label ?? "Products"}
+        onClick={onOpen}
+        className={className}
+      />
+    );
+  }
+
   return (
-    // The caller caps the height; the root is a flex column so the viewport
-    // (an overflow-scroll flex child) shrinks to that cap and scrolls, rather
-    // than resolving its `h-full` against an indefinite height and spilling.
-    // The scrollbar overlays the viewport, so while there is something to
-    // scroll the rail widens by a gutter for it rather than narrowing the cards.
-    // The cards' width is fixed, so widening cannot change their height and
-    // flip the overflow state back.
-    <ScrollArea
-      className={cn(
-        "pointer-events-auto flex w-[250px] flex-col font-cis",
-        "data-has-overflow-y:w-[264px]",
-        className,
-      )}
+    // The caller caps the height, and the frame is a flex column whose
+    // ScrollArea is the one child allowed to shrink, so the list scrolls inside
+    // the cap. The scrollbar overlays the rows' right padding, which is wider
+    // than the bar, so it never lands on a chevron.
+    <SidePanel
+      title="Layers"
+      className={cn("w-[250px]", className)}
+      actions={
+        <PanelIconButton label="Close products" onClick={onClose}>
+          <X aria-hidden />
+        </PanelIconButton>
+      }
     >
-      <div className="flex w-[250px] flex-col gap-2">
+      <ul className="flex flex-col divide-y divide-line">
         {products.map((product) => {
           const isOpen = product.id === openProductId;
           const panelId = `${idPrefix}-${product.id}-panel`;
           const headerId = `${idPrefix}-${product.id}-header`;
 
           return (
-            <div
-              key={product.id}
-              className={cn(
-                "overflow-hidden rounded-panel backdrop-blur-md transition-colors duration-150",
-                isOpen
-                  ? "border border-brand-medium bg-panel-strong"
-                  : "border border-line bg-panel",
-              )}
-            >
+            <li key={product.id}>
               <button
                 type="button"
                 id={headerId}
@@ -93,9 +112,13 @@ export function ProductAccordion({
                 onClick={() => onOpenProductChange(isOpen ? null : product.id)}
                 className={cn(
                   "flex h-11 w-full items-center justify-between px-3.5 text-left",
-                  "text-sm text-fg-heading outline-none",
-                  "focus-visible:ring-3 focus-visible:ring-brand/50",
-                  isOpen ? "border-b border-line font-semibold" : "font-medium",
+                  "text-sm text-fg-heading outline-none transition-colors duration-150",
+                  // Inset: the row runs edge to edge, and the panel clips
+                  // anything drawn outside it.
+                  "focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-inset",
+                  isOpen
+                    ? "border-b border-line font-semibold"
+                    : "font-medium hover:bg-line/40",
                 )}
               >
                 {product.label}
@@ -103,15 +126,15 @@ export function ProductAccordion({
                   aria-hidden
                   className={cn(
                     // 150ms is the CIS accordion-chevron duration.
-                    "size-4 transition-transform duration-150",
+                    "size-4 shrink-0 transition-transform duration-150",
                     isOpen ? "rotate-180 text-brand" : "text-fg-subtle",
                   )}
                 />
               </button>
 
-              {/* Kept out of the tree when closed rather than hidden: the rail is
-                short, and an unmounted panel cannot be reached by tab order or
-                by a screen reader's virtual cursor. */}
+              {/* Kept out of the tree when closed rather than hidden: the rail
+                is short, and an unmounted panel cannot be reached by tab order
+                or by a screen reader's virtual cursor. */}
               {isOpen && (
                 <div id={panelId} role="region" aria-labelledby={headerId}>
                   <ProductVariables
@@ -121,11 +144,58 @@ export function ProductAccordion({
                   />
                 </div>
               )}
-            </div>
+            </li>
           );
         })}
-      </div>
-    </ScrollArea>
+      </ul>
+    </SidePanel>
+  );
+}
+
+/**
+ * What the rail leaves in its corner when it is closed: the name of the
+ * product on the map, and the way back to the rail.
+ *
+ * Drawn like the button the empty right-hand slot shows (see PanelDock) and
+ * the same 44px tall as the panel's header, so it stands where the header
+ * stood. Content width, capped at the rail's, so a long product name truncates
+ * rather than reaching across the map.
+ *
+ * The accessible name leads with the visible one — the product — and says what
+ * pressing it does after, so speech input can call it by what it shows.
+ */
+function ProductsButton({
+  label,
+  onClick,
+  className,
+}: {
+  label: string;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      title="Show products"
+      onClick={onClick}
+      className={cn(
+        "pointer-events-auto flex h-11 max-w-[250px] items-center gap-2.5 px-3.5 font-cis",
+        "rounded-panel border border-line bg-panel text-sm font-medium text-fg-body shadow-panel backdrop-blur-md",
+        "cursor-pointer outline-none transition-colors duration-150",
+        "hover:border-brand-medium hover:text-fg-heading",
+        "focus-visible:ring-3 focus-visible:ring-brand/50",
+        className,
+      )}
+    >
+      <span className="truncate">{label}</span>
+      <span className="sr-only">, show products</span>
+      {/* The same caret as a closed product row in the rail, since pressing it
+        opens that rail. */}
+      <ChevronDown
+        aria-hidden
+        className="ml-auto size-4 shrink-0 text-fg-subtle"
+      />
+    </button>
   );
 }
 

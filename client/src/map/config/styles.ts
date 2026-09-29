@@ -1,3 +1,4 @@
+import type { Theme } from "@/components/theme/themeContext";
 import { glyphsUrl, spriteUrl } from "./martin";
 
 /**
@@ -15,6 +16,18 @@ export type BasemapId = keyof typeof BASEMAPS;
 
 /** Dark first: rasters and choropleths read far better on it. */
 export const DEFAULT_BASEMAP: BasemapId = "dark";
+
+/**
+ * The basemap each theme draws.
+ *
+ * The theme picks the basemap rather than the two being separate choices,
+ * because a light shell around a dark map, or the reverse, is the one
+ * combination that reads badly.
+ */
+export const THEME_BASEMAP: Record<Theme, BasemapId> = {
+  dark: "dark",
+  light: "positron",
+};
 
 /**
  * The flat ground each basemap is composed on — and, painted a second time

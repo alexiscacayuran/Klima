@@ -19,19 +19,19 @@ export type SidePanelProps = {
 };
 
 /**
- * The frame both right-hand panels are drawn in.
+ * The frame the side panels are drawn in: the product rail on the left, the
+ * overview and detail panels on the right.
  *
- * One component rather than two copies of the same classes because the
- * overview and detail panels take turns in one slot: sharing the frame is what
- * makes them the same size, so switching between them swaps the contents of a
- * box rather than replacing the box.
+ * One component rather than copies of the same classes because the overview
+ * and detail panels take turns in one slot: sharing the frame is what makes
+ * them the same size, so switching between them swaps the contents of a box
+ * rather than replacing the box. The rail uses it for the other half of that
+ * reason — the same fill, hairline, radius and 44px header with its close
+ * button, so the two edges of the chrome are one object on either side.
  *
- * The rail's parts on the other side of the map — the panel fill, hairline and
- * radius, a 44px header — so the two read as the two edges of one chrome.
- *
- * The width is a default rather than a fixture — the detail panel widens to
- * half the viewport — but everything else is fixed here, which is what keeps
- * the two panels the same object in two states.
+ * The width is a default rather than a fixture — the rail is narrower, and the
+ * detail panel widens to half the viewport — but everything else is fixed
+ * here, which is what keeps the panels the same object in different states.
  *
  * A flex column so the caller's height cap reaches the body: the ScrollArea is
  * the one child allowed to shrink, and scrolls whatever does not fit.

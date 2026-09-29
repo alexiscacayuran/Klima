@@ -1,7 +1,8 @@
 import { createContext } from 'react'
 
 /**
- * The right-hand panels: which one is up, and how wide the detail panel is.
+ * The side panels: whether the product rail is open on the left, and on the
+ * right which panel is up and how wide the detail panel is.
  *
  * A context for the reason every other piece of shared state here is one: the
  * panels are chrome, siblings of <Map>, while the two things that open the
@@ -15,8 +16,20 @@ import { createContext } from 'react'
  * The two panels share one slot and cannot both be up — opening either closes
  * the other — but either can be closed on its own, leaving the slot empty and
  * the button that opens the overview uncovered beneath it.
+ *
+ * The rail is in here because the two sides are not independent: widening the
+ * detail panel closes it. That is a rule between panels, and this is where
+ * the others are kept.
  */
 export type SidePanelsState = {
+  /**
+   * The product rail is showing, rather than the button that stands in for
+   * it. Open at startup.
+   */
+  productsOpen: boolean
+  openProducts: () => void
+  closeProducts: () => void
+
   /** The overview panel is showing. Open at startup. */
   overviewOpen: boolean
   openOverview: () => void
@@ -41,12 +54,21 @@ export type SidePanelsState = {
    * The detail panel is at its wide size — half the viewport — rather than
    * the column width it opens at. Reset when it closes, so it always opens
    * narrow.
+   *
+   * Widening it closes the product rail, and narrowing it again does not bring
+   * the rail back — the same rule as the overview: the rail was put away on
+   * the way in, and reopening it would undo that on the user's behalf. Its
+   * button is how it returns, and it can come back beside the wide panel,
+   * whose width already leaves the rail room.
    */
   detailExpanded: boolean
   toggleDetailExpanded: () => void
 }
 
 export const SidePanelsContext = createContext<SidePanelsState>({
+  productsOpen: false,
+  openProducts: () => {},
+  closeProducts: () => {},
   overviewOpen: false,
   openOverview: () => {},
   closeOverview: () => {},

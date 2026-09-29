@@ -109,30 +109,56 @@ export const stationShortName = (name: string): string =>
  *
  * One station per request, and there is no bulk form (docs/cis-api.md §7), so
  * this is fetched for the station a user opens rather than for the layer. The
- * fields are the ones the detail panel prints; the rest of the response is
- * dropped here rather than carried as dead weight.
+ * fields are the ones the detail panel prints, which is the whole response but
+ * `latDms` and `longDms`: the same position as `lat`/`long`, spelled for a
+ * reader rather than for a paste, and dropped here rather than carried as dead
+ * weight.
  *
- * `name` is the short form ("NAIA, Pasay City") and `longName` the upper-cased
- * one; the panel titles with `/stations`' own `station` string, which is what
- * the pill's tooltip already showed, so neither is kept.
+ * Every field but the id can be null, and most are for some stations: the rain
+ * gauges carry no code, address, record period, division or schedule.
  */
 export type StationMeta = {
   id: number
   /** `synop`, `agromet`, `arg` or `radar` — free text on the wire, kept as-is. */
   type: string | null
+  /** PAGASA's own number for the station, e.g. `432`. Not the id. */
+  code: number | null
+  /** e.g. `"NAIA, Pasay City"` — what `/stations` calls `station`. */
+  name: string | null
+  /**
+   * The name upper-cased, and sometimes more than that — `"BSU (MSAC) LA
+   * TRINIDAD, BENGUET"` against `"BSU, La Trinidad, Benguet"`.
+   */
+  longName: string | null
   /** The PSGC of the unit the station stands in. Joins to boundary tiles. */
   locationId: string | null
+  /** Renamed from `long`, for the reason `Station.lng` is. */
+  lng: number | null
+  lat: number | null
+  address: string | null
   /** Metres above sea level. */
   elevation: number | null
-  latDms: string | null
-  longDms: string | null
   /** e.g. `"1949 - present"`. */
   yearRecord: string | null
+  /** The PAGASA Regional Services Division, e.g. `"Northern Luzon"`. */
+  prsd: string | null
+  /** How often it reports, e.g. `"3 HOURLY"`. */
+  obsTime: string | null
   /** The normals the forecast's `normal*` fields are read against, e.g. `"1991-2020"`. */
   norPeriod: string | null
+  /** Caveats on those normals, e.g. `"data from 1981 - 2010"`. Usually null. */
+  norRainfallRemarks: string | null
+  norTempRemarks: string | null
 }
 
-type StationMetaRow = StationMeta & Record<string, unknown>
+type StationMetaRow = Record<string, unknown> & { id: number }
+
+/** A string field, with the empty string treated as the absence it means. */
+const text = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+
+const numeric = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null
 
 export async function fetchStationMeta(
   stationId: number,
@@ -141,12 +167,20 @@ export async function fetchStationMeta(
   const row = await apiGet<StationMetaRow>(`/stations/${stationId}`, undefined, init)
   return {
     id: row.id,
-    type: row.type ?? null,
-    locationId: row.locationId ?? null,
-    elevation: typeof row.elevation === 'number' ? row.elevation : null,
-    latDms: row.latDms ?? null,
-    longDms: row.longDms ?? null,
-    yearRecord: row.yearRecord ?? null,
-    norPeriod: row.norPeriod ?? null,
+    type: text(row.type),
+    code: numeric(row.code),
+    name: text(row.name),
+    longName: text(row.longName),
+    locationId: text(row.locationId),
+    lng: numeric(row.long),
+    lat: numeric(row.lat),
+    address: text(row.address),
+    elevation: numeric(row.elevation),
+    yearRecord: text(row.yearRecord),
+    prsd: text(row.prsd),
+    obsTime: text(row.obsTime),
+    norPeriod: text(row.norPeriod),
+    norRainfallRemarks: text(row.norRainfallRemarks),
+    norTempRemarks: text(row.norTempRemarks),
   }
 }

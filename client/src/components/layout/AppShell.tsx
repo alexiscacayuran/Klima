@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
  * Full-viewport frame: the map takes all of it.
  *
  * The header this used to carry is gone — the imported design puts the wordmark
- * in a bar floating over the map (see map/controls/TitleSearchBar), and a fixed
+ * floating over the map (see map/controls/AppLogo), and a fixed
  * header above it would have shown the name twice and cost the map a strip of
  * height it uses for the timeline.
  *

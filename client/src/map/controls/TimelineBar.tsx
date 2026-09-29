@@ -57,6 +57,16 @@ type TimelineBarProps = {
    * that could only ever reveal blank silhouettes is not a control.
    */
   preview?: TimelinePreview;
+  /**
+   * Hold the bar at its compact height: the strip closes, and its toggle is
+   * dimmed, for as long as this is set. For when something else needs the room
+   * above the bar — the detail panel at its wide size reaches over the bar's
+   * centre, and an open strip would grow up into it.
+   *
+   * Only overrides the reader's choice, never replaces it: when this clears,
+   * a strip they had open slides back open.
+   */
+  compact?: boolean;
   className?: string;
 };
 
@@ -180,6 +190,7 @@ export function TimelineBar({
   loading = false,
   stepDurationMs = 1200,
   preview,
+  compact = false,
   className,
 }: TimelineBarProps) {
   const [playing, setPlaying] = useState(false);
@@ -238,12 +249,16 @@ export function TimelineBar({
           activeIndex / lastIndex
         })`;
 
+  // What the reader asked for, less what the layout can spare. The toggle
+  // shows this rather than the request, so it is never lit over a closed strip.
+  const previewsOn = previewsShown && !compact;
+
   // Open only while there is something to put in it — the dates, or their
   // skeletons while the dates are loading. A product with no dates at all
   // collapses the strip rather than holding up a row of empty cards over a
   // rail that says there is nothing to scrub.
   const stripOpen =
-    preview !== undefined && previewsShown && (!isEmpty || loading);
+    preview !== undefined && previewsOn && (!isEmpty || loading);
 
   // Cards are mounted when the strip opens, not before: each one starts loading
   // and painting its snapshot the moment it exists, and a strip the reader has
@@ -481,14 +496,15 @@ export function TimelineBar({
                 size="icon"
                 onClick={() => setPreviewsShown((shown) => !shown)}
                 // Dimmed for the reason play is: with no dates there is no
-                // strip to reveal, but the bar keeps its shape.
-                disabled={isEmpty && !loading}
-                aria-pressed={previewsShown}
+                // strip to reveal, but the bar keeps its shape. Likewise while
+                // held compact, when there is no room to reveal it into.
+                disabled={compact || (isEmpty && !loading)}
+                aria-pressed={previewsOn}
                 aria-label="Map previews"
                 className={cn(
                   "rounded-full text-fg-subtle hover:text-fg-heading",
                   "focus-visible:ring-brand-medium",
-                  previewsShown &&
+                  previewsOn &&
                     "bg-brand-softer text-fg-brand-strong hover:bg-brand-soft hover:text-fg-brand-strong",
                   "disabled:opacity-40",
                 )}
@@ -498,7 +514,7 @@ export function TimelineBar({
             <GalleryHorizontalEnd className="size-4" />
           </TooltipTrigger>
           <TooltipContent className="font-cis">
-            {previewsShown ? "Hide map previews" : "Show map previews"}
+            {previewsOn ? "Hide map previews" : "Show map previews"}
           </TooltipContent>
         </Tooltip>
       )}

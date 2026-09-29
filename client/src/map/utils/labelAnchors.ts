@@ -1,6 +1,12 @@
 import type { Point } from 'geojson'
+import type { VectorTileLayer } from '@mapbox/vector-tile'
 import type { AdminLevel } from '@/map/types/features'
-import { NATIONAL_TILE, fetchNationalLayer } from './nationalTile'
+import {
+  NATIONAL_TILE,
+  OUTLYING_TILES,
+  fetchNationalLayer,
+} from './nationalTile'
+import type { TileAddress } from './nationalTile'
 
 /**
  * One label point per administrative unit.
@@ -200,18 +206,59 @@ function toLngLat(
  * generalizes below z9, and generalization drops features it cannot represent:
  * level 3 arrives as 1214 features at z0, 1634 at z2 and 1641 at z4, against the
  * 1642 rows docs/vector-tiles.md describes. So NATIONAL_TILE being as deep as it
- * can be is what keeps that tail to a single municipality, and that municipality
- * goes unlabelled — its boundary is still drawn, still hit-tested and still
- * selectable, because those read the tile for the zoom on screen rather than
- * this one.
+ * can be is what keeps that tail to a single municipality.
+ *
+ * That municipality is Kalayaan, and it is also missing at level 2, where the
+ * PSA data carries it as a unit of its own. It is read from a deeper tile over
+ * the island (OUTLYING_TILES) and added after the national set, so it has a
+ * name, and a reading where the layer publishes one, in the magnified inset
+ * as well as on the main map.
  */
 export async function fetchLabelAnchors(
   level: AdminLevel,
   init?: RequestInit,
 ): Promise<LabelAnchorCollection> {
-  const layer = await fetchNationalLayer(level, init)
-  if (!layer) return EMPTY_ANCHORS
+  const [national, ...outlying] = await Promise.all([
+    fetchNationalLayer(level, init),
+    // Not fatal: a lost outlying tile costs one label, and must not take the
+    // country's other names down with it. An abort still reaches the caller
+    // through the national fetch, which shares the signal.
+    ...OUTLYING_TILES.map((tile) =>
+      fetchNationalLayer(level, init, tile).catch((error: unknown) => {
+        if (!(error instanceof Error && error.name === 'AbortError')) {
+          console.error(error)
+        }
+        return null
+      }),
+    ),
+  ])
+  if (!national) return EMPTY_ANCHORS
 
+  const features = anchorsIn(national, NATIONAL_TILE)
+  const anchored = new Set(features.map((f) => f.properties.psgc))
+
+  // Only what the national tile lost. At level 1 the island is MIMAROPA's,
+  // which the national tile has already anchored on its largest island; a second
+  // "MIMAROPA" out on Pag-asa would be the repeated name this file exists to
+  // prevent.
+  OUTLYING_TILES.forEach((tile, i) => {
+    const layer = outlying[i]
+    if (!layer) return
+    for (const feature of anchorsIn(layer, tile)) {
+      if (anchored.has(feature.properties.psgc)) continue
+      anchored.add(feature.properties.psgc)
+      features.push(feature)
+    }
+  })
+
+  return { type: 'FeatureCollection', features }
+}
+
+/** One anchor per feature in a tile, on the feature's largest island. */
+function anchorsIn(
+  layer: VectorTileLayer,
+  tile: TileAddress,
+): LabelAnchorCollection['features'] {
   const features: LabelAnchorCollection['features'] = []
 
   for (let i = 0; i < layer.length; i++) {
@@ -227,7 +274,7 @@ export async function fetchLabelAnchors(
       type: 'Feature',
       geometry: {
         type: 'Point',
-        coordinates: toLngLat(pointOnSurface(largest), NATIONAL_TILE, layer.extent),
+        coordinates: toLngLat(pointOnSurface(largest), tile, layer.extent),
       },
       properties: {
         psgc: String(feature.properties.psgc),
@@ -241,5 +288,5 @@ export async function fetchLabelAnchors(
     })
   }
 
-  return { type: 'FeatureCollection', features }
+  return features
 }

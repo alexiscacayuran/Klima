@@ -80,10 +80,11 @@ Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and
 `RateLimit-Reset`. Over budget is `429` with `{ "message": … }`.
 
 **One bucket, all routes.** The express limiter keys on the authenticated
-identity, so every request the account makes — any product, plus `/stations` and
-`/products` — draws down the *same* 100. This is newly true: those last two were
-unauthenticated and therefore keyed by IP, which gave them a separate bucket of
-their own. Budget the whole session, not each product.
+identity, so every request the account makes — any product, plus the reference
+routes `/stations`, `/products` and `/locations` — draws down the *same* 100.
+This is newly true: `/stations` and `/products` were unauthenticated and
+therefore keyed by IP, which gave them a separate bucket of their own. Budget the
+whole session, not each product.
 
 **A per-region fan-out is 18 requests** (see §3). At the `apiuser` ceiling that
 is five full national refreshes per 15 minutes — enough, but not enough to fan
@@ -121,8 +122,11 @@ self-gating (see below).
 | `/daily-monitoring/*` (GETs) | **required** — `apiuser` or `superuser` | yes — `daily-monitoring` |
 | `/stations/*` | **required** — `apiuser` or `superuser` | **no** |
 | `/products` | **required** — `apiuser` or `superuser` | **no** |
+| `/locations` | **required** — `apiuser` or `superuser` | **no** |
 
-The last four rows used to answer unauthenticated. That gap is closed — this doc
+`/seasonal`, `/daily-monitoring`, `/stations` and `/products` used to answer
+unauthenticated (`/locations` is newer and has required a token from the
+start). That gap is closed — this doc
 previously said not to rely on it, and Klima put the header on every request
 rather than product by product, so nothing in the client needs rewiring. A
 deployment that never set a token, however, now gets `401` everywhere instead of
@@ -135,13 +139,14 @@ segment of the router mount — `drought`, `fiveday`, `seasonal`,
 `403 {"message":"Product access forbidden"}` on `/fiveday`, and now on
 `/seasonal` and `/daily-monitoring` too.
 
-**`/stations/*` and `/products` sit outside that scheme deliberately.** Their
-mount segments are not product names, so they authenticate the caller and stop
-there — no entitlement check. Any active `apiuser` reads them whatever its token
-grants, which is what makes them usable as shared reference data: station
-metadata and the catalogue are needed to interpret *any* product. Verified: a
-`["drought"]` token gets all 108 stations and all four catalogue entries, not a
-subset. **Neither endpoint is filtered to the token's entitlements**, so
+**`/stations/*`, `/products` and `/locations` sit outside that scheme
+deliberately.** Their mount segments are not product names, so they authenticate
+the caller and stop there — no entitlement check. Any active `apiuser` reads them
+whatever its token grants, which is what makes them usable as shared reference
+data: station metadata, the catalogue and the place list are needed to interpret
+*any* product. Verified: a `["drought"]` token gets all 108 stations, all four
+catalogue entries and all 1,758 locations, not a subset. **None of them is
+filtered to the token's entitlements**, so
 `/products` is a catalogue of what CIS publishes, not of what the caller may
 read — do not drive a product picker off it without intersecting against what
 the token actually opens.
@@ -218,7 +223,8 @@ Failure shapes: `401 {"message":"Not authenticated"}` (no token),
 
 ### The join key
 
-`psgc` is the same 10-character string everywhere — `locations.id` in the API,
+`psgc` is the same 10-character string everywhere — `locations.id` in the API
+(listed whole by [`/locations`](#locations--locations--auth-required-not-product-scoped)),
 the `psgc` tile property, and `Number(psgc)` as the MVT feature id. The join is a
 plain equality; see [vector-tiles.md](vector-tiles.md#joining-climate-data).
 
@@ -226,6 +232,7 @@ plain equality; see [vector-tiles.md](vector-tiles.md#joining-climate-data).
 
 | Endpoint | Field holding the PSGC | Type |
 |---|---|---|
+| `/locations` | `id` | string |
 | `/drought`, `/drought/assessment`, `/drought/outlook` | `id` | string |
 | `/seasonal`, `/seasonal/point` | `id` | string |
 | `/fiveday` | `psgc` | string |
@@ -268,10 +275,15 @@ Either way the response is an array.
 | `1100000000` | Region XI (Davao Region) | | | |
 
 Pass the code, not the name — the names carry parentheses and roman numerals that
-have to survive `encodeURIComponent` intact.
+have to survive `encodeURIComponent` intact. The same 18 rows are
+`/locations?level=region`, if the list should follow PSGC revisions rather than
+be hard-coded. That endpoint is the one national query the API has, but it
+returns place names only, not climate data.
 
 **Drought only** additionally accepts `luzon`, `visayas`, `mindanao`, which cuts
 the national fan-out to three requests. No other product understands them.
+`/locations?islandGroup=` uses the same three names and the same region
+grouping, so it lists exactly the provinces such a request covers.
 
 ### Extra units
 
@@ -292,7 +304,7 @@ Products publish at a few non-province units, all addressable by name or code:
 ## 4. Coverage — where the choropleth will have holes
 
 The API's units and the level-2 tile polygons are close but not identical. 87
-polygons, 82 `Prov` rows, 85–86 publishing units. Design for gaps rather than
+polygons, 82 `Prov` rows (`/locations?level=province`), 85–86 publishing units. Design for gaps rather than
 assuming totality.
 
 | Polygon (level 2) | PSGC | Gap |
@@ -532,10 +544,18 @@ seasonal-enabled stations only. `date` optional.
              "rainfallProbAn": 40.2156, "rainfallProbNn": 28.8029, "rainfallProbBn": 30.9816,
              "tmax": 32.607, "tmin": 24.134, "tmean": 28.371, "tmeanAnomaly": 0.576,
              "tmaxLow": 32.313, "tmaxHigh": 37.032, "tminLow": 20.919, "tminHigh": 27.046,
-             "normalRainfall": 271, "normalTmax": 31.355, "normalTmin": 24.232 }] }
+             "rainfallNormal": 271, "tmaxNormal": 31.356, "tminNormal": 24.233,
+             "tmeanNormal": 27.794 }] }
 ```
 
 `rainfallProbAn`/`Nn`/`Bn` are above/near/below-normal terciles summing to ~100.
+
+**The normals keys were renamed.** They were `normalRainfall`, `normalTmax` and
+`normalTmin`. They are now `rainfallNormal`, `tmaxNormal` and `tminNormal`,
+which matches `monthlyStats` and `/historical-station` in daily monitoring.
+`tmeanNormal` is new. It is the station's 1991–2020 monthly mean temperature,
+the baseline `tmeanAnomaly` is measured against. The same keys appear in
+`/seasonal?spatialRes=station`.
 
 Note the shape change: `/seasonal/station` returns **one object**, while
 `/seasonal?spatialRes=station` returns an **array** of them.
@@ -604,6 +624,7 @@ gap-filling.
 One station, `station` + `period`. **The normals keys are renamed** —
 `rainfallNormal` / `tmaxNormal` / `tminNormal` here, against
 `normalRainfall` / `normalTmax` / `normalTmin` in `/historical`. Same numbers.
+`/historical` is the only endpoint that still uses the `normal*` prefix.
 
 #### `GET /ranking`
 
@@ -683,6 +704,97 @@ boundary tiles like any other. `404 {"message":"Station not found."}`.
 
 ---
 
+### Locations — `/locations` · auth required, not product-scoped
+
+The PSGC reference list: every region, province, city, municipality and Manila
+sub-municipality CIS knows, each tagged with its island group. It is the table
+that every PSGC `id` in this doc and every `location` parameter resolves
+against. A CIS deployment older than this endpoint answers `404`.
+
+#### `GET /locations`
+
+| Param | | |
+|---|---|---|
+| `level` | `region` \| `province` \| `municity`, or `1` \| `2` \| `3` | The numbers are the ADM levels the tiles use. Anything else is a `400` |
+| `islandGroup` | `luzon` \| `visayas` \| `mindanao` | Anything else is a `400` |
+
+Both are optional and case-insensitive, and they combine:
+`?level=province&islandGroup=visayas` returns Visayas's 16 provinces. With
+neither, you get all 1,758 rows. Rows are ordered by `id`.
+
+| Filter | Rows | `geogLevel` |
+|---|---|---|
+| none | 1,758 | all, including `SubMun` and `null` |
+| `level=region` · `1` | 18 | `Reg` |
+| `level=province` · `2` | 82 | `Prov` |
+| `level=municity` · `3` | 1,642 | `Mun` (1,493) + `City` (149) |
+| `islandGroup=luzon` · `visayas` · `mindanao` | 831 · 428 · 499 | every level |
+
+```json
+[{ "id": "0102800000", "name": "Ilocos Norte", "geogLevel": "Prov",
+   "oldName": null, "status": null, "oldId": "012800000", "islandGroup": "Luzon" },
+ { "id": "0102812000", "name": "City of Laoag", "geogLevel": "City",
+   "oldName": null, "status": "Capital", "oldId": "012812000", "islandGroup": "Luzon" }]
+```
+
+| Field | |
+|---|---|
+| `id` | The 10-character PSGC, the join key of §3 |
+| `name` | The PSA name, as used in the `location` parameter's name matching (§3) |
+| `geogLevel` | `Reg`, `Prov`, `City`, `Mun`, `SubMun`, or `null` |
+| `oldName` | A former name (81 rows), else `null` |
+| `status` | `"Capital"` for the 82 provincial capitals, else `null` |
+| `oldId` | The unit's code in the older 9-digit PSGC format. `null` for the 12 units created since: NIR, the two Maguindanaos, and the SGA with its 8 municipalities |
+| `islandGroup` | `Luzon`, `Visayas` or `Mindanao`. Always set |
+
+**`islandGroup` is assigned by region**, with the same grouping drought uses.
+MIMAROPA and Bicol (Masbate included) are Luzon, NIR is Visayas, and BARMM is
+Mindanao. The values are capitalised exactly as drought's `islandGroup` field
+is (`"Luzon"`), so the two compare with plain equality. Only the query
+parameter is case-insensitive.
+
+**Some rows match no `level`.** Manila's 14 districts (`SubMun`) and two rows
+with a `null` level appear only in the unfiltered list:
+
+- `0990100000` "City of Isabela (Not a Province)" is a wrapper row. The city
+  itself is `0990101000`, a `City` row, which is the code §3 lists for it.
+- `1999900000` Special Geographic Area is the level-2 polygon that §4 lists as
+  always unpainted. Because its level is `null`, `level=province` omits it.
+  That is one reason `level=province` does not line up with the level-2 tiles.
+  The other is the promoted rows described in
+  [vector-tiles.md](vector-tiles.md), such as NCR and Kalayaan.
+
+**Listing a place does not make it a valid `location`.** The data endpoints
+still resolve only regions, provinces and each product's extra units (§3). This
+endpoint lists municipalities, but a data endpoint given a municipality's code
+answers `404 Invalid PSGC code.`. Given the municipality's name, it either
+answers `404` or fuzzy-matches a similarly named region or province, which is
+not necessarily the one that contains the municipality.
+
+**There is no parent field.** The hierarchy is in the code: region, province,
+municipality and barangay are 2 + 3 + 2 + 3 digits, so a row's region is its
+first two digits padded with zeros, and a province's cities and municipalities
+share its first five. Highly urbanised cities are the exception. PSGC codes
+them in a province slot of their own (City of Cebu is `0730600000`, not under
+Cebu's `07022`), so eight provincial capitals nest under nothing in the
+10-digit code: Lucena, Iloilo, Cebu, Tacloban, Cagayan de Oro, Butuan, Puerto
+Princesa and Bacolod. Their `oldId` still nests them (Lucena `045624000` under
+Quezon `045600000`).
+
+**`ñ` arrives as U+FFFD.** Twenty names, including "City of Las Pi�as" and
+"Santo Ni�o", carry a literal replacement character, so the character was lost
+before the response was encoded. It is the only non-ASCII character in the
+list, and every occurrence stands for a lowercase `ñ`, so
+`client/src/api/locations.ts` puts it back.
+
+**Fetch it once.** The unfiltered list is about 228 KB of JSON, sent
+uncompressed: neither Express nor the CIS nginx gzips it. It changes only when
+CIS reloads its PSGC data, so cache it for the session and filter on the
+client. The weak `ETag` makes revalidation a `304`, but that request still
+counts against the rate limit.
+
+---
+
 ## 6. Response conventions
 
 **Dates.** `date` is `YYYY-MM-DD` for daily and five-day, `YYYY-MM` for drought
@@ -733,7 +845,7 @@ Worth knowing before designing around something that is not there.
 | **Raster / COG serving** | Still nothing *in this API* — no presigned URLs, no titiler. But the rasters are readable: MinIO serves the WebPs directly over an anonymous prefix in the dev stack, which is how the map paints them. See [raster-layers.md](raster-layers.md); production is still unsolved |
 | **GeoJSON** | No geometry from the API at all. Geometry is tiles-only |
 | **Station metadata in bulk** | `/stations` carries identity and coordinates; `locationId`, `elevation`, `type` and the normals are 1 + N from `/stations/:id` (§5) |
-| **National / bbox / viewport queries** | Fan out over the 18 regions |
+| **National / bbox / viewport queries** | Fan out over the 18 regions (`/locations?level=region` lists them). `/locations` is national but carries no climate data |
 | **Live updates** | The SSE channel under `/progress/:channelId` is admin-scoped import progress, not data push. Poll `/products` — `nextUpdateAt` for when the next issuance is due, `latestData` for what has actually landed |
 | **Consistent envelopes** | Some endpoints return an object, some an array, and the PSGC field is named differently per product. Normalize once, at the fetch boundary |
 
@@ -754,6 +866,7 @@ client/src/api/
 ├── seasonal.ts
 ├── dailyMonitoring.ts
 ├── stations.ts
+├── locations.ts     the PSGC list, fetched once per session
 └── normalize.ts     psgc extraction, string→number ids, object→array
 ```
 

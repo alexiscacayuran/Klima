@@ -23,6 +23,50 @@ export const PHILIPPINES_BOUNDS: LngLatBoundsLike = [
 ]
 
 /**
+ * Kalayaan, as the boundary data draws it: Pag-asa Island, and nothing else.
+ *
+ * The municipality claims the whole island group, but the PSA geometry Martin
+ * serves has a single polygon for it, about 1.3 × 0.6 km at 114.28°E. At the
+ * national fit (~z6.4) that is under one pixel, which is why
+ * overlays/KalayaanInset magnifies it. Measured off a z13 tile.
+ *
+ * Also what utils/nationalTile reads a deeper tile for: the national tile
+ * generalises the island away at every level, so without a second tile
+ * Kalayaan would have no label anchor.
+ */
+export const KALAYAAN_BOUNDS: [[number, number], [number, number]] = [
+  [114.2779, 11.0506],
+  [114.2898, 11.0563],
+]
+
+export const KALAYAAN_CENTER: [number, number] = [
+  (KALAYAAN_BOUNDS[0][0] + KALAYAAN_BOUNDS[1][0]) / 2,
+  (KALAYAAN_BOUNDS[0][1] + KALAYAAN_BOUNDS[1][1]) / 2,
+]
+
+/**
+ * Slack round the island's measured extent, in degrees (~200m). The extent was
+ * read off one tile; the tiles either side of it in zoom draw the coast a few
+ * metres differently, and a pin on the shoreline must still count.
+ */
+const SHORE_SLACK = 0.002
+
+/**
+ * Whether a point is on Kalayaan — which, for a pin, is whether it is the
+ * inset's to draw. A pin can only land on land, and the island is the only land
+ * in the inset's view, so its extent is the whole test.
+ */
+export function onKalayaan({ lng, lat }: { lng: number; lat: number }) {
+  const [[west, south], [east, north]] = KALAYAAN_BOUNDS
+  return (
+    lng >= west - SHORE_SLACK &&
+    lng <= east + SHORE_SLACK &&
+    lat >= south - SHORE_SLACK &&
+    lat <= north + SHORE_SLACK
+  )
+}
+
+/**
  * Elastic pan limit. Panning past this is allowed — it springs back on release
  * (see interactions/useElasticBounds).
  *

@@ -13,8 +13,11 @@ import { DEFAULT_BASEMAP } from '@/map/config/styles'
  * alone.
  */
 export type MapSettings = {
+  /**
+   * Read-only: it follows the theme (THEME_BASEMAP), whose switch is in the
+   * Settings popover (see controls/AppActions).
+   */
   basemap: BasemapId
-  setBasemap: (id: BasemapId) => void
 
   showBoundaries: boolean
   setShowBoundaries: (visible: boolean) => void
@@ -31,6 +34,14 @@ export type MapSettings = {
   showStations: boolean
   setShowStations: (visible: boolean) => void
 
+  /**
+   * Whether the magnified Kalayaan inset is over the map (see
+   * overlays/KalayaanInset). Off until asked for: it is a second map, and a
+   * second WebGL context is not something to spend on everyone's first load.
+   */
+  showKalayaanInset: boolean
+  setShowKalayaanInset: (visible: boolean) => void
+
   /** Visibility per RASTER_LAYERS id. Absent key means hidden. */
   visibleLayers: Readonly<Record<string, boolean>>
   toggleLayer: (id: string, visible: boolean) => void
@@ -42,11 +53,12 @@ export type MapSettings = {
  */
 export const MapSettingsContext = createContext<MapSettings>({
   basemap: DEFAULT_BASEMAP,
-  setBasemap: () => {},
   showBoundaries: true,
   setShowBoundaries: () => {},
   showStations: true,
   setShowStations: () => {},
+  showKalayaanInset: false,
+  setShowKalayaanInset: () => {},
   visibleLayers: {},
   toggleLayer: () => {},
 })

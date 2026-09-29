@@ -41,9 +41,17 @@ export function useMapImage(
     if (!map) return
     register()
     return () => {
-      // The map may already be torn down during unmount; removing a missing
-      // image throws, so check first.
-      if (map.hasImage?.(id)) map.removeImage(id)
+      // The map may already be torn down. When a <Map> unmounts, react-maplibre
+      // removes the map before its children's effects are cleaned up, and a
+      // removed map has no style: `hasImage` throws rather than answering, and
+      // the error takes the whole tree down with it. The Kalayaan inset is the
+      // map that unmounts — its switch in MapOptions does it. An image on a
+      // removed map is gone already, so there is nothing to undo.
+      try {
+        if (map.hasImage(id)) map.removeImage(id)
+      } catch {
+        // Removed with the map.
+      }
       setReady(false)
     }
   }, [map, id, register])

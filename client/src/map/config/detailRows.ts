@@ -182,11 +182,16 @@ function value<M, F extends keyof M>(
     format: (month) => {
       const number = finite(month[field] as number | null);
       if (number === null) return null;
-      const text = number.toFixed(decimals);
+      // A figure that rounds to nothing is printed as nothing, unsigned:
+      // +0.02 is not "+0.0", and -0.04 is not "-0.0".
+      const text =
+        Number(number.toFixed(decimals)) === 0
+          ? (0).toFixed(decimals)
+          : number.toFixed(decimals);
       return {
         // An anomaly reads as a direction first: "+0.6", never a bare "0.6"
         // that leaves the reader to guess which side of normal it is on.
-        text: `${signed && number > 0 ? "+" : ""}${text}${suffix}`,
+        text: `${signed && Number(text) > 0 ? "+" : ""}${text}${suffix}`,
         fill: paint?.(number),
       };
     },
@@ -220,8 +225,11 @@ function range<M, F extends keyof M>(
   };
 }
 
-/** Each outcome in words, for the reader who cannot see its tag. */
-const TERCILE_NAMES: Record<Tercile, string> = {
+/**
+ * Each outcome in words, for the reader who cannot see its tag — and for the
+ * charts, whose legend names the outcomes rather than abbreviating them.
+ */
+export const TERCILE_NAMES: Record<Tercile, string> = {
   above: "Above normal",
   near: "Near normal",
   below: "Below normal",
@@ -313,7 +321,7 @@ export const STATION_GROUPS: readonly DetailGroup<S>[] = [
           suffix: "%",
           paint: PERCENT_OF_NORMAL,
         }),
-        value<S, SF>("normalRainfall", "Normal", {
+        value<S, SF>("rainfallNormal", "Normal", {
           unit: "mm",
           paint: RAINFALL,
         }),
@@ -337,6 +345,11 @@ export const STATION_GROUPS: readonly DetailGroup<S>[] = [
           decimals: 1,
           signed: true,
         }),
+        value<S, SF>("tmeanNormal", "Normal", {
+          unit: "°C",
+          decimals: 1,
+          paint: TEMPERATURE,
+        }),
       ],
       [
         value<S, SF>("tmax", "Max", {
@@ -348,7 +361,7 @@ export const STATION_GROUPS: readonly DetailGroup<S>[] = [
           unit: "°C",
           paint: TEMPERATURE,
         }),
-        value<S, SF>("normalTmax", "Normal max", {
+        value<S, SF>("tmaxNormal", "Normal max", {
           unit: "°C",
           decimals: 1,
           paint: TEMPERATURE,
@@ -364,7 +377,7 @@ export const STATION_GROUPS: readonly DetailGroup<S>[] = [
           unit: "°C",
           paint: TEMPERATURE,
         }),
-        value<S, SF>("normalTmin", "Normal min", {
+        value<S, SF>("tminNormal", "Normal min", {
           unit: "°C",
           decimals: 1,
           paint: TEMPERATURE,

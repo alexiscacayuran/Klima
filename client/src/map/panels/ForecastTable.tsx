@@ -10,9 +10,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import type { DetailRow, Figure } from "@/map/config/detailRows";
+import type { DetailGroup, DetailRow, Figure } from "@/map/config/detailRows";
 import { formatStepId, formatStepMonth } from "@/map/config/timeline";
+import { useSelection } from "@/map/state/useSelection";
 import { inkOn } from "@/map/utils/ink";
+import { ForecastAccordion } from "./ForecastAccordion";
 
 const NO_VALUE = "—";
 
@@ -100,6 +102,41 @@ export function useScrollSync(): ScrollSync {
     };
   });
   return sync;
+}
+
+/**
+ * The Table tab: an issuance as one card per variable (see ForecastAccordion),
+ * each over its own table.
+ *
+ * The open cards are one grid: the same columns, scrolled sideways together,
+ * and a card opened later joins at the position the others are already at. The
+ * position is held out here, above the accordion, so it outlives the cards
+ * resetting when the rail's variable changes.
+ */
+export function ForecastTables<M extends Month>({
+  groups,
+  months,
+}: {
+  groups: readonly DetailGroup<M>[];
+  /** The issuance's months, earliest first — every card's columns. */
+  months: readonly M[];
+}) {
+  const { date } = useSelection();
+  const scrollSync = useScrollSync();
+
+  return (
+    <ForecastAccordion groups={groups}>
+      {(group) => (
+        <ForecastTable
+          sections={group.sections}
+          months={months}
+          currentDate={date}
+          scrollSync={scrollSync}
+          accent={group.accent}
+        />
+      )}
+    </ForecastAccordion>
+  );
 }
 
 /**

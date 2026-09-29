@@ -1,5 +1,5 @@
 import { Marker, Popup } from "@vis.gl/react-maplibre";
-import { ChevronDown } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { seasonalMonth } from "@/api/seasonal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -154,8 +154,17 @@ function readingFor(
  * over the canvas rather than anything MapLibre paints, so they take no part in
  * LAYER_ORDER and are mounted beside DataLayers rather than inside it. They must
  * still be children of <Map> — both reach the instance through MapContext.
+ *
+ * Mounted in both maps, and each draws only the pins it `owns`: a pin on
+ * Kalayaan is drawn in the inset that magnifies it, where the dot has an
+ * island to sit on, and nowhere else — see MapScene.
  */
-export function LocationPopup() {
+export function LocationPopup({
+  owns,
+}: {
+  /** Whether a pin at this point is this map's to draw. Every pin, if absent. */
+  owns?: (lngLat: { lng: number; lat: number }) => boolean;
+}) {
   const { pinned, setPinned, date, variable } = useSelection();
   // Open, the panel is where this card's reading continues, so the card stands
   // aside for it and the dot changes to say the pin is being described there.
@@ -174,7 +183,8 @@ export function LocationPopup() {
 
   // No pin, nothing to point at. Unmounting rather than hiding is what keeps
   // MapLibre from holding a popup element over the canvas that swallows clicks.
-  if (!pinned) return null;
+  // The same for a pin the other map is drawing.
+  if (!pinned || (owns && !owns(pinned.lngLat))) return null;
 
   const { lng, lat } = pinned.lngLat;
 
@@ -197,12 +207,14 @@ export function LocationPopup() {
         // these two compete directly and a single step is enough to invert them.
         // Nothing else of the popup reaches this far down, so lifting the marker
         // over the whole popup only ever shows up as the dot capping the line.
+        // Two rather than one because the popup itself takes one, to stand over
+        // the Kalayaan inset (see .klima-popup in index.css).
         //
         // Both go through `style` because they are properties of the marker
         // element MapLibre makes, not of the dot this component renders inside
         // it; className on <Marker> would land on the same element, but these
         // two exist to override library CSS and belong next to the reason.
-        style={{ pointerEvents: "none", zIndex: 1 }}
+        style={{ pointerEvents: "none", zIndex: 2 }}
       >
         {/* A dot, not a droplet. What is being marked is a coordinate rather
             than a place — the place is already lit underneath, in the boundary
@@ -379,6 +391,8 @@ export function LocationPopup() {
               {/* The disclosure: the whole issuance for this place, in the
                 detail panel. Opens the panel if it was collapsed, since a
                 request for more on a folded panel is a request for the panel.
+                A right caret, not a down one: nothing unfolds inside the card —
+                the reading carries on in the panel to its right.
 
                 Solid brand, the same fill the timeline's play button carries,
                 on white rather than --color-fg-brand-strong — that step is for
@@ -400,7 +414,7 @@ export function LocationPopup() {
                   "focus-visible:ring-3 focus-visible:ring-brand/50",
                 )}
               >
-                <ChevronDown aria-hidden className="size-3.5" />
+                <ChevronRight aria-hidden className="size-3.5" />
               </button>
             </div>
           </div>

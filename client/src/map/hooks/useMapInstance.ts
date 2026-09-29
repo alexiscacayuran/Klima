@@ -3,19 +3,22 @@ import type { MapRef } from '@vis.gl/react-maplibre'
 import { MAP_ID } from '@/map/config/constants'
 
 /**
- * The app's map, or undefined until it has mounted.
+ * The map the caller is drawn in, or undefined until it has mounted.
  *
  * `useMap()` returns maps keyed by id (from <MapProvider>) plus `current`
- * (from MapContext). Checking the id first is what lets components *outside*
- * <Map> — like the toolbar — reach the instance; `current` alone would only
- * ever resolve for descendants.
+ * (from MapContext). The enclosing <Map> wins: there are two maps on screen —
+ * the main one and the Kalayaan inset (overlays/KalayaanInset) — and the same
+ * layer components are mounted in both, so a layer has to reach the map it is
+ * a child of rather than the one with the well-known id. Anything *outside*
+ * every <Map> — the search bar, the panels — has no `current`, and falls back
+ * to the main map by id.
  *
  * Every caller must handle the undefined first render, which is why this
  * returns it rather than asserting.
  */
 export function useMapInstance(): MapRef | undefined {
   const maps = useMap()
-  return maps[MAP_ID] ?? maps.current
+  return maps.current ?? maps[MAP_ID]
 }
 
 /**

@@ -57,8 +57,11 @@ import { useSelection } from '@/map/state/useSelection'
  *
  * ## One overlay, N layers
  *
- * Exactly one MapboxOverlay exists in the app, and it is this. Two would fight
- * over the GL context. Seasonal is the only product publishing rasters today,
+ * Exactly one MapboxOverlay exists per map, and it is this. Two on one map would
+ * fight over its GL context. The Kalayaan inset is a second map with a context
+ * of its own, so it mounts a second copy of this component; the image is still
+ * decoded once, because useRasterImage caches by URL. Seasonal is the only
+ * product publishing rasters today,
  * but it is not expected to stay that way, so this component resolves *which*
  * surface to draw from config rather than naming one: a second product adds a
  * RasterSource and a RasterVariant in config/rasters.ts and arrives here

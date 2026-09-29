@@ -10,6 +10,7 @@ import { useSelection } from './useSelection'
 export function SidePanelsProvider({ children }: { children: ReactNode }) {
   const { pinned, station } = useSelection()
   const hasSubject = pinned !== null || station !== null
+  const [productsOpen, setProductsOpen] = useState(true)
   const [overviewOpen, setOverviewOpen] = useState(true)
   const [wantsDetail, setWantsDetail] = useState(false)
   const [detailExpanded, setDetailExpanded] = useState(false)
@@ -53,13 +54,21 @@ export function SidePanelsProvider({ children }: { children: ReactNode }) {
 
   const closeOverview = useCallback(() => setOverviewOpen(false), [])
 
-  const toggleDetailExpanded = useCallback(
-    () => setDetailExpanded((expanded) => !expanded),
-    [],
-  )
+  const openProducts = useCallback(() => setProductsOpen(true), [])
+  const closeProducts = useCallback(() => setProductsOpen(false), [])
+
+  // Reads the current width rather than flipping it in an updater, so the
+  // rail closes only on the way out to wide, and no updater sets other state.
+  const toggleDetailExpanded = useCallback(() => {
+    if (!detailExpanded) setProductsOpen(false)
+    setDetailExpanded(!detailExpanded)
+  }, [detailExpanded])
 
   const value = useMemo(
     () => ({
+      productsOpen,
+      openProducts,
+      closeProducts,
       overviewOpen,
       openOverview,
       closeOverview,
@@ -70,6 +79,9 @@ export function SidePanelsProvider({ children }: { children: ReactNode }) {
       toggleDetailExpanded,
     }),
     [
+      productsOpen,
+      openProducts,
+      closeProducts,
       overviewOpen,
       openOverview,
       closeOverview,
