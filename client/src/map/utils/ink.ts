@@ -25,3 +25,12 @@ export const inkOn = (color: string): string =>
   chroma.contrast(color, INK_LIGHT) >= chroma.contrast(color, INK_DARK)
     ? INK_LIGHT
     : INK_DARK;
+
+/**
+ * Whether a data colour all but vanishes on a white panel — near average on
+ * the temperature anomaly scale is published as pure white. A swatch in one
+ * needs an edge to be seen at all; a saturated one does not, and an edge
+ * around it would only muddy the colour.
+ */
+export const isPale = (color: string): boolean =>
+  chroma.contrast(color, INK_LIGHT) < 1.25;

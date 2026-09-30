@@ -22,16 +22,19 @@ import {
   MonthTick,
   TooltipRow,
 } from "./ChartFrame";
+import { TEMPERATURE_ANOMALY_SCALE } from "@/map/config/colorScales";
+import type { ScaleClass } from "@/map/config/colorScales";
+import { symbologyModeFor } from "@/map/config/rasters";
+import { DEFAULT_PRODUCT_ID, variableKey } from "@/map/config/products";
+import { isPale } from "@/map/utils/ink";
 import {
   AXIS_INSET,
-  BLUE,
   BODY,
   CURRENT_FILL,
   CURRENT_OPACITY,
   figure,
   GRID,
   plotClass,
-  RED,
   tooltipClass,
   tooltipMonth,
 } from "./chartStyle";
@@ -42,24 +45,45 @@ const config = {
   tmeanAnomaly: { label: "Anomaly" },
 } satisfies ChartConfig;
 
-const KEY = [
-  { key: "warm", label: "Warmer than normal", glyph: <Swatch color={RED} /> },
-  { key: "cool", label: "Cooler than normal", glyph: <Swatch color={BLUE} /> },
-];
-
-/** What a departure means, in words, for the tooltip. */
-const direction = (value: number) =>
-  Number(value.toFixed(1)) > 0
-    ? "Warmer than normal"
-    : Number(value.toFixed(1)) < 0
-      ? "Cooler than normal"
-      : "Normal";
+const SCALE = TEMPERATURE_ANOMALY_SCALE;
 
 /**
- * A departure as a bar from the zero line, in its direction's colour and
- * rounded at the end away from zero — the data end, whichever way it points.
- * Two hues and no third: the midpoint is the zero line, and a month on it
- * draws nothing.
+ * A departure's colour: the anomaly layer's own, under the mode the layer
+ * declares, so a bar is the colour the same month's station pill is.
+ */
+const MODE = symbologyModeFor(
+  variableKey(DEFAULT_PRODUCT_ID, "temperature", "anomaly"),
+);
+const paint = (value: number) => SCALE.colorFor(value, MODE);
+
+/** What a departure means, in words — the published class name. */
+const meaning = (value: number) => {
+  const cls = SCALE.classAt(value);
+  return cls.label ?? cls.range;
+};
+
+/**
+ * The key: the classes the plotted months fall in, in the scale's order, coolest
+ * first. Not all seven — a chart of six months rarely spans more than three,
+ * and a key of classes nothing on the plot is drawn in is a legend for a
+ * different chart. The map's legend lists the whole table.
+ */
+function keyFor(values: readonly number[]) {
+  const shown = new Set<ScaleClass>(values.map((value) => SCALE.classAt(value)));
+  return SCALE.classes
+    .filter((cls) => shown.has(cls))
+    .map((cls) => ({
+      key: String(cls.from),
+      label: cls.label ?? cls.range,
+      glyph: <Swatch color={cls.color} />,
+    }));
+}
+
+/**
+ * A departure as a bar from the zero line, in its class's colour and rounded
+ * at the end away from zero — the data end, whichever way it points. A month
+ * on the zero line draws nothing. Near average is published as white, so a
+ * bar in it is drawn with an edge in the body ink, or it would not be seen.
  *
  * Normalised here rather than trusted: for a value under zero recharts hands
  * the shape a negative height, and a Rectangle's corners are read from its
@@ -72,12 +96,15 @@ function AnomalyBar(props: BarShapeProps) {
   const top = Math.min(props.y ?? 0, (props.y ?? 0) + (props.height ?? 0));
   const height = Math.abs(props.height ?? 0);
   const warm = value >= 0;
+  const fill = paint(value);
   return (
     <Rectangle
       {...props}
       y={top}
       height={height}
-      fill={warm ? RED : BLUE}
+      fill={fill}
+      stroke={isPale(fill) ? BODY : undefined}
+      strokeWidth={1}
       radius={warm ? [4, 4, 0, 0] : [0, 0, 4, 4]}
     />
   );
@@ -109,7 +136,7 @@ export function TemperatureAnomalyChart({
     <ChartFigure
       title="Anomaly"
       unit="°C"
-      legend={values.length > 0 && <ChartKey items={KEY} />}
+      legend={values.length > 0 && <ChartKey items={keyFor(values)} />}
     >
       {values.length === 0 ? (
         <EmptyPlot>No anomaly published.</EmptyPlot>
@@ -164,13 +191,13 @@ export function TemperatureAnomalyChart({
                     return (
                       <TooltipRow
                         glyph={
-                          <Swatch
-                            color={value !== null && value < 0 ? BLUE : RED}
-                          />
+                          value !== null && <Swatch color={paint(value)} />
                         }
-                        label={value === null ? "Anomaly" : direction(value)}
+                        label={value === null ? "Anomaly" : meaning(value)}
+                        // Two decimals, the legend's own, as the table prints
+                        // the anomaly.
                         value={figure(value, {
-                          decimals: 1,
+                          decimals: 2,
                           suffix: " °C",
                           signed: true,
                         })}

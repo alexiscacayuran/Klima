@@ -4,6 +4,7 @@ import {
   RAINFALL_PERCENT_OF_NORMAL_SCALE,
   RAINFALL_TERCILE_SCALES,
   SEASONAL_TEMPERATURE_SCALE,
+  TEMPERATURE_ANOMALY_SCALE,
   TERCILE_TAGS,
 } from "./colorScales";
 import type { ColorScale, Tercile } from "./colorScales";
@@ -153,14 +154,18 @@ const TERCILE_PAINTS: Record<Tercile, Paint> = {
   below: paintAs(RAINFALL_TERCILE_SCALES.below, TERCILE_LAYER),
 };
 /**
- * Every temperature takes the one seasonal temperature scale, the only one
- * published. It was drawn for the mean, so a max over 30 °C sits in its top
- * class. The anomaly takes none: it is a departure rather than a temperature,
- * and on this ramp +0.6 °C would read as cool.
+ * Every temperature takes the one seasonal temperature scale. It was drawn for
+ * the mean, so a max over 30 °C sits in its top class. The anomaly takes its
+ * own: it is a departure rather than a temperature, and on the mean's ramp
+ * +0.6 °C would read as cool.
  */
 const TEMPERATURE = paintAs(
   SEASONAL_TEMPERATURE_SCALE,
-  seasonal("temperature"),
+  seasonal("temperature", "forecast"),
+);
+const TEMPERATURE_ANOMALY = paintAs(
+  TEMPERATURE_ANOMALY_SCALE,
+  seasonal("temperature", "anomaly"),
 );
 
 /**
@@ -340,10 +345,14 @@ export const STATION_GROUPS: readonly DetailGroup<S>[] = [
           decimals: 1,
           paint: TEMPERATURE,
         }),
+        // Two decimals, the anomaly legend's own, so the printed figure and
+        // the class its fill comes from cannot disagree (see the reading in
+        // config/seasonalReadings).
         value<S, SF>("tmeanAnomaly", "Anomaly", {
           unit: "°C",
-          decimals: 1,
+          decimals: 2,
           signed: true,
+          paint: TEMPERATURE_ANOMALY,
         }),
         value<S, SF>("tmeanNormal", "Normal", {
           unit: "°C",

@@ -1,3 +1,5 @@
+import { cn } from "@/lib/utils";
+import { isPale } from "@/map/utils/ink";
 import { BAND_OPACITY, BODY, INK, NORMAL_DASH, SURFACE } from "./chartStyle";
 
 /**
@@ -40,12 +42,18 @@ export function NormalDash({ cx, cy }: { cx?: number; cy?: number }) {
   );
 }
 
-/** A filled mark's key: a bar or a segment. */
+/**
+ * A filled mark's key: a bar or a segment. Edged in the body ink when the fill
+ * is too pale to see on the panel, as the bar it keys is.
+ */
 export function Swatch({ color }: { color: string }) {
   return (
     <span
       aria-hidden
-      className="size-2.5 shrink-0 rounded-[2px]"
+      className={cn(
+        "size-2.5 shrink-0 rounded-[2px]",
+        isPale(color) && "ring-1 ring-fg-body ring-inset",
+      )}
       style={{ background: color }}
     />
   );

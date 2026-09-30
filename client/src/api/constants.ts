@@ -44,3 +44,22 @@ export const REGION_PSGC = [
   '1800000000', // Negros Island Region (NIR)
   '1900000000', // Bangsamoro (BARMM)
 ] as const
+
+/**
+ * The three island groups, spelled as CIS spells them in every response —
+ * `/locations`, `/stations`, drought — so each compares to the others with plain
+ * equality (docs/cis-api.md §5). The `islandGroup=` query parameter takes them
+ * in any case; the responses are always capitalised like this.
+ */
+export const ISLAND_GROUPS = ['Luzon', 'Visayas', 'Mindanao'] as const
+export type IslandGroup = (typeof ISLAND_GROUPS)[number]
+
+/**
+ * An `islandGroup` field narrowed to one of the three, or null.
+ *
+ * The docs call the field always set, but an older CIS leaves it off `/stations`
+ * entirely (docs/cis-api.md §5) — so a missing or unrecognised value is read as
+ * "not known" rather than trusted as a string, and never guessed at.
+ */
+export const parseIslandGroup = (value: unknown): IslandGroup | null =>
+  ISLAND_GROUPS.find((group) => group === value) ?? null

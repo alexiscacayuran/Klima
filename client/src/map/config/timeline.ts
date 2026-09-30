@@ -271,6 +271,20 @@ export function formatStepMonth(id: string): string {
   return MONTH.format(new Date(Date.UTC(parsed.year, parsed.month - 1, 1)))
 }
 
+const ISSUED = new Intl.DateTimeFormat('en-PH', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  // The issuance's own zone. `issuedAt` carries +08:00, so this is the date
+  // PAGASA issued on, whatever zone the reader is in.
+  timeZone: 'Asia/Manila',
+})
+
+/** An issuance's `issuedAt` as a date: "2026-08-26T…+08:00" → "Aug 26, 2026". */
+export function formatIssuedAt(issuedAt: string): string {
+  return ISSUED.format(new Date(issuedAt))
+}
+
 /**
  * The window for a rail product, or an empty one when the map's current
  * selection has no CIS dataset behind it.

@@ -20,8 +20,10 @@ import { useMapInstance } from "@/map/hooks/useMapInstance";
 import { useSeasonalStations } from "@/map/hooks/useSeasonalStations";
 import { useStationClusters } from "@/map/hooks/useStationClusters";
 import { useStations } from "@/map/hooks/useStations";
+import { useMapSettings } from "@/map/state/useMapSettings";
 import { useSidePanels } from "@/map/state/useSidePanels";
 import { useSelection } from "@/map/state/useSelection";
+import { StationDot } from "./StationDot";
 import { StationClusterPill, StationPill } from "./StationPill";
 import type { StripSegment } from "./StationPill";
 
@@ -83,6 +85,8 @@ type StationFeatureProperties = {
 export function StationMarkers() {
   const { variable, date, station, setStation } = useSelection();
   const { showDetail } = useSidePanels();
+  const { stationMarkers } = useMapSettings();
+  const dots = stationMarkers === "dots";
   const map = useMapInstance();
 
   // A selected station cannot outlive the layer that drew it — the same rule
@@ -163,7 +167,7 @@ export function StationMarkers() {
     // properties, so anything that could change it has to be here.
   }, [geometry, values, reading, terciles, date, variable]);
 
-  const items = useStationClusters(geometry.status === "ready");
+  const items = useStationClusters(geometry.status === "ready" && !dots);
 
   /**
    * Zoom to where a cluster comes apart.
@@ -195,6 +199,56 @@ export function StationMarkers() {
     },
     [map],
   );
+
+  const openStation = useCallback(
+    (id: number) => {
+      setStation(id);
+      showDetail();
+    },
+    [setStation, showDetail],
+  );
+
+  /**
+   * The dots: every station, straight from the collection.
+   *
+   * No source and no query. What the clustered source buys the pills is the
+   * clustering, and the dots have none — so the round trip through the worker
+   * would return exactly the features that went in. Not the same source with
+   * `cluster` off, either: <Source> fixes its options at construction (see the
+   * note on STATION_CLUSTER_RADIUS), and a second one under the same id adopts
+   * the first during render rather than replacing it.
+   *
+   * North to south, so where two overlap at national zoom the southern one is
+   * drawn over — the stacking a reader expects of marks on a map. The selected
+   * station is lifted above all of them.
+   */
+  if (dots) {
+    const features = [...collection.features].sort(
+      (a, b) => latitudeOf(b) - latitudeOf(a),
+    );
+
+    return features.map((feature) => {
+      const id = Number(feature.id);
+      const [lng, lat] = (feature.geometry as GeoJSON.Point).coordinates;
+      const selected = id === station;
+
+      return (
+        <Marker
+          key={`d${id}`}
+          longitude={lng}
+          latitude={lat}
+          anchor="center"
+          style={selected ? { zIndex: 1 } : undefined}
+        >
+          <StationDot
+            {...pillProps(feature.properties ?? {})}
+            selected={selected}
+            onClick={() => openStation(id)}
+          />
+        </Marker>
+      );
+    });
+  }
 
   return (
     <>
@@ -242,10 +296,7 @@ export function StationMarkers() {
             <StationPill
               {...pillProps(item.properties)}
               selected={item.id === station}
-              onClick={() => {
-                setStation(item.id);
-                showDetail();
-              }}
+              onClick={() => openStation(item.id)}
             />
           </Marker>
         ),
@@ -253,6 +304,9 @@ export function StationMarkers() {
     </>
   );
 }
+
+const latitudeOf = (feature: GeoJSON.Feature): number =>
+  (feature.geometry as GeoJSON.Point).coordinates[1];
 
 /** A station as a GeoJSON point carrying the pill's properties. */
 function stationFeature(

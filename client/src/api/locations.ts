@@ -1,4 +1,6 @@
 import { apiGet } from './client'
+import { parseIslandGroup } from './constants'
+import type { IslandGroup } from './constants'
 
 /**
  * The PSGC reference list — `GET /locations`.
@@ -33,8 +35,11 @@ export type PsgcLocation = {
   capital: boolean
   /** The same unit in the 9-digit PSGC; null for the 12 units created since. */
   oldPsgc: string | null
-  /** `Luzon`, `Visayas` or `Mindanao`, assigned by region. Always set. */
-  islandGroup: string
+  /**
+   * Assigned by region, and always set by CIS; null only if a value arrives
+   * that is not one of the three, which is left unsaid rather than printed.
+   */
+  islandGroup: IslandGroup | null
 }
 
 /** The wire shape, before the renaming above. */
@@ -68,7 +73,7 @@ export async function fetchLocations(
     oldName: row.oldName === null ? null : repairName(row.oldName),
     capital: row.status === 'Capital',
     oldPsgc: row.oldId,
-    islandGroup: row.islandGroup,
+    islandGroup: parseIslandGroup(row.islandGroup),
   }))
 }
 

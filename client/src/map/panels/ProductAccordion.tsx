@@ -1,8 +1,16 @@
 import { useId, useState } from "react";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import type { ComponentType } from "react";
+import { ChevronDown, ChevronRight, CircleDot, X } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { PRODUCTS, productIdFromKey, variableKey } from "@/map/config/products";
-import type { ProductDefinition, ProductVariable } from "@/map/config/products";
+import type {
+  ProductControl,
+  ProductDefinition,
+  ProductVariable,
+} from "@/map/config/products";
+import { useMapSettings } from "@/map/state/useMapSettings";
 import { PanelIconButton, SidePanel } from "./SidePanel";
 
 type ProductAccordionProps = {
@@ -22,7 +30,10 @@ type ProductAccordionProps = {
     variableId: string,
     layerId?: string,
   ) => void;
-  /** Placement and height cap, applied to the panel or the button alike. */
+  /**
+   * Placement, as a box with a definite height — a top *and* a bottom — which
+   * the panel caps itself at, the same arrangement as PanelDock.
+   */
   className?: string;
 };
 
@@ -45,8 +56,9 @@ type ProductAccordionProps = {
  * are one object on either side. Like the overview it can be closed, and what
  * it leaves behind is a button in the same corner, naming the product the map
  * is showing — so with the rail put away the map still says what it is of, and
- * the one click that brings the rail back is on that name. Widening the detail
- * panel closes it too (see SidePanelsState.detailExpanded).
+ * the one click that brings the rail back is on that name. Widening either
+ * right-hand panel closes it too, and narrowing it again reopens it (see
+ * SidePanelsState.panelExpanded).
  *
  * Selection state is owned by the caller so the map and the rail cannot disagree
  * about what is being painted, and so is whether the rail is open, since the
@@ -65,31 +77,78 @@ export function ProductAccordion({
   className,
 }: ProductAccordionProps) {
   const idPrefix = useId();
+  const active = selectedVariable
+    ? products.find(
+        (product) => product.id === productIdFromKey(selectedVariable),
+      )
+    : undefined;
 
-  if (!open) {
-    const active = selectedVariable
-      ? products.find(
-          (product) => product.id === productIdFromKey(selectedVariable),
-        )
-      : undefined;
-
-    return (
+  return (
+    // The button and the panel stacked in one grid cell rather than swapped,
+    // so each can fade over the other in the corner they share — the panel
+    // grows out of the button and folds back into it (see `.side-panel` in
+    // index.css). The row is the caller's full height, which is what the
+    // panel's `max-h-full` resolves against.
+    <div
+      className={cn(
+        "pointer-events-none grid grid-rows-[minmax(0,1fr)] items-start justify-items-start",
+        "*:[grid-area:1/1]",
+        className,
+      )}
+    >
       <ProductsButton
         label={active?.label ?? "Products"}
         onClick={onOpen}
-        className={className}
+        closed={open}
       />
-    );
-  }
+      <ProductsPanel
+        products={products}
+        idPrefix={idPrefix}
+        closed={!open}
+        onClose={onClose}
+        openProductId={openProductId}
+        onOpenProductChange={onOpenProductChange}
+        selectedVariable={selectedVariable}
+        onSelectVariable={onSelectVariable}
+      />
+    </div>
+  );
+}
 
+/**
+ * The rail itself. Mounted whether or not it is open — closed, it is folded
+ * away and inert rather than gone, so closing it can play.
+ */
+function ProductsPanel({
+  products,
+  idPrefix,
+  closed,
+  onClose,
+  openProductId,
+  onOpenProductChange,
+  selectedVariable,
+  onSelectVariable,
+}: {
+  products: readonly ProductDefinition[];
+  idPrefix: string;
+  closed: boolean;
+} & Pick<
+  ProductAccordionProps,
+  | "onClose"
+  | "openProductId"
+  | "onOpenProductChange"
+  | "selectedVariable"
+  | "onSelectVariable"
+>) {
   return (
-    // The caller caps the height, and the frame is a flex column whose
-    // ScrollArea is the one child allowed to shrink, so the list scrolls inside
-    // the cap. The scrollbar overlays the rows' right padding, which is wider
-    // than the bar, so it never lands on a chevron.
+    // The frame is a flex column whose ScrollArea is the one child allowed to
+    // shrink, so the list scrolls inside the cap. The scrollbar overlays the
+    // rows' right padding, which is wider than the bar, so it never lands on a
+    // chevron.
     <SidePanel
       title="Layers"
-      className={cn("w-[250px]", className)}
+      closed={closed}
+      className="max-h-full w-[250px] origin-top-left"
       actions={
         <PanelIconButton label="Close products" onClick={onClose}>
           <X aria-hidden />
@@ -142,6 +201,9 @@ export function ProductAccordion({
                     selectedVariable={selectedVariable}
                     onSelectVariable={onSelectVariable}
                   />
+                  {product.controls?.length ? (
+                    <ProductControls controls={product.controls} />
+                  ) : null}
                 </div>
               )}
             </li>
@@ -167,24 +229,27 @@ export function ProductAccordion({
 function ProductsButton({
   label,
   onClick,
-  className,
+  closed,
 }: {
   label: string;
   onClick: () => void;
-  className?: string;
+  /** The rail is open over it: faded out and inert, as PanelDock's button. */
+  closed: boolean;
 }) {
   return (
     <button
       type="button"
       title="Show products"
       onClick={onClick}
+      data-closed={closed || undefined}
+      inert={closed}
       className={cn(
-        "pointer-events-auto flex h-11 max-w-[250px] items-center gap-2.5 px-3.5 font-cis",
+        // `panel-launcher` carries the fade and the hover colours' easing.
+        "panel-launcher pointer-events-auto flex h-11 max-w-[250px] items-center gap-2.5 px-3.5 font-cis",
         "rounded-panel border border-line bg-panel text-sm font-medium text-fg-body shadow-panel backdrop-blur-md",
-        "cursor-pointer outline-none transition-colors duration-150",
+        "cursor-pointer outline-none",
         "hover:border-brand-medium hover:text-fg-heading",
         "focus-visible:ring-3 focus-visible:ring-brand/50",
-        className,
       )}
     >
       <span className="truncate">{label}</span>
@@ -397,3 +462,68 @@ function VariableRow({
     </li>
   );
 }
+
+/**
+ * The controls a product declares (see config/products `controls`), under its
+ * layers and a hairline apart from them: the layers above choose *what* the map
+ * paints, and these change how it is drawn, so the rule keeps a switch from
+ * reading as one more layer to pick.
+ *
+ * Same padding and row grid as the variable list, so an icon here lines up
+ * under the variable icons above it.
+ */
+function ProductControls({
+  controls,
+}: {
+  controls: readonly ProductControl[];
+}) {
+  return (
+    <ul className="flex flex-col gap-0.5 border-t border-line p-1.5">
+      {controls.map((control) => {
+        const Control = PRODUCT_CONTROL_COMPONENTS[control];
+        return (
+          <li key={control}>
+            <Control />
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * Clustered reading cards, or every station as a dot.
+ *
+ * "On" is the alternative rather than the default, so the switch reads as
+ * turning something on — the dots — and the rail opens with it off.
+ */
+function StationMarkersControl() {
+  const { stationMarkers, setStationMarkers } = useMapSettings();
+  const id = useId();
+
+  return (
+    <div className="flex h-8 items-center justify-between gap-2.5 px-2">
+      <Label htmlFor={id} className="min-w-0 gap-2.5 font-normal text-fg-body">
+        <CircleDot
+          aria-hidden
+          className="size-[15px] shrink-0 text-fg-subtle"
+        />
+        <span className="truncate">Dot markers</span>
+      </Label>
+      <Switch
+        id={id}
+        size="sm"
+        checked={stationMarkers === "dots"}
+        onCheckedChange={(checked) =>
+          setStationMarkers(checked ? "dots" : "pills")
+        }
+        className="data-checked:bg-brand"
+      />
+    </div>
+  );
+}
+
+/** What draws each control id. A Record, so a new id fails to compile here. */
+const PRODUCT_CONTROL_COMPONENTS: Record<ProductControl, ComponentType> = {
+  "station-markers": StationMarkersControl,
+};

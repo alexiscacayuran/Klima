@@ -5,6 +5,7 @@ import {
   RAINFALL_PERCENT_OF_NORMAL_SCALE,
   RAINFALL_TERCILE_SCALES,
   SEASONAL_TEMPERATURE_SCALE,
+  TEMPERATURE_ANOMALY_SCALE,
   TERCILES,
 } from './colorScales'
 import { parseVariableKey } from './products'
@@ -93,6 +94,12 @@ export type SeasonalReading = {
    */
   decimals: number
   /**
+   * Whether a positive value carries its "+". For a departure, which reads as
+   * a direction first — "+0.60", never a bare "0.60" that leaves the reader to
+   * guess which side of normal it is on.
+   */
+  signed?: boolean
+  /**
    * The layer's published symbology (see config/colorScales).
    *
    * What makes a reading say something rather than only state a number: the
@@ -135,12 +142,23 @@ const SEASONAL_READINGS: Record<string, SeasonalReading> = {
   // figures at best, while the national spread of `tmean` is 18–30 °C, so a
   // whole degree is a tenth of the entire range and rounding to it would merge
   // bands the scale distinguishes.
-  temperature: {
+  'temperature:forecast': {
     stationField: 'tmean',
     label: 'Mean temperature',
     unit: '°C',
     decimals: 1,
     scale: SEASONAL_TEMPERATURE_SCALE,
+  },
+  // Two decimals, the precision PAGASA's anomaly legend is printed to: its
+  // classes change at 0.51 and 1.01, so a figure rounded to tenths could read
+  // "+0.5" on a pill painted slightly above average.
+  'temperature:anomaly': {
+    stationField: 'tmeanAnomaly',
+    label: 'Temperature anomaly',
+    unit: '°C',
+    decimals: 2,
+    signed: true,
+    scale: TEMPERATURE_ANOMALY_SCALE,
   },
 }
 
@@ -290,5 +308,10 @@ export function formatSeasonalValue(
   reading: SeasonalReading,
   value: number,
 ): string {
-  return `${value.toFixed(reading.decimals)}${reading.suffix ?? ''}`
+  const text = value.toFixed(reading.decimals)
+  // Judged on the rounded figure, so a value that rounds to nothing is printed
+  // as nothing, unsigned: +0.002 is not "+0.00", and -0.004 is not "-0.00".
+  const printed = Number(text) === 0 ? (0).toFixed(reading.decimals) : text
+  const sign = reading.signed && Number(printed) > 0 ? '+' : ''
+  return `${sign}${printed}${reading.suffix ?? ''}`
 }

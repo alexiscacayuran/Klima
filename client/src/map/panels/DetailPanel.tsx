@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { PROVINCE_GROUPS, STATION_GROUPS } from "@/map/config/detailRows";
+import { formatIssuedAt } from "@/map/config/timeline";
 import { useSeasonalForecast } from "@/map/hooks/useSeasonalForecast";
 import { usePlaceProfile } from "@/map/hooks/usePlaceProfile";
 import { useSeasonalStations } from "@/map/hooks/useSeasonalStations";
@@ -29,6 +30,8 @@ import { PanelIconButton, SidePanel } from "./SidePanel";
 export type DetailPanelProps = {
   /** Placement and height cap from the dock; the frame sizes its own width. */
   className?: string;
+  /** Put away into the dock's corner, still mounted — see SidePanel `closed`. */
+  closed?: boolean;
 };
 
 /**
@@ -52,9 +55,9 @@ export type DetailPanelProps = {
  * subject: someone reading charts goes on reading charts from one station to
  * the next.
  */
-export function DetailPanel({ className }: DetailPanelProps) {
+export function DetailPanel({ className, closed }: DetailPanelProps) {
   const { pinned, station } = useSelection();
-  const { closeDetail, detailExpanded, toggleDetailExpanded } = useSidePanels();
+  const { closeDetail, panelExpanded, togglePanelExpanded } = useSidePanels();
 
   return (
     // `contents`: the root has to enclose both the tab list in the header and
@@ -62,6 +65,7 @@ export function DetailPanel({ className }: DetailPanelProps) {
     // root must not become a box of its own around it.
     <Tabs defaultValue="table" className="contents">
       <SidePanel
+        closed={closed}
         title="Detail"
         heading={
           <TabsList variant="line">
@@ -84,7 +88,7 @@ export function DetailPanel({ className }: DetailPanelProps) {
           // right-aligns its slot rather than fixing its width. Half the
           // viewport, but never so far that it reaches the product rail on the
           // other side: 22rem holds back the rail, both gutters and a gap.
-          detailExpanded ? "w-[50vw] max-w-[calc(100vw-22rem)]" : "w-[360px]",
+          panelExpanded ? "w-[50vw] max-w-[calc(100vw-22rem)]" : "w-[360px]",
           className,
         )}
         actions={
@@ -93,10 +97,10 @@ export function DetailPanel({ className }: DetailPanelProps) {
               up-right-and-down-left-from-center and
               down-left-and-up-right-to-center. */}
             <PanelIconButton
-              label={detailExpanded ? "Collapse panel" : "Expand panel"}
-              onClick={toggleDetailExpanded}
+              label={panelExpanded ? "Collapse panel" : "Expand panel"}
+              onClick={togglePanelExpanded}
             >
-              {detailExpanded ? (
+              {panelExpanded ? (
                 <Minimize2 aria-hidden />
               ) : (
                 <Maximize2 aria-hidden />
@@ -414,7 +418,7 @@ function PlaceFacts({
   const facts = compact([
     province && { term: "Province", value: province.name },
     region && { term: "Region", value: region.name },
-    { term: "Island group", value: place.islandGroup },
+    place.islandGroup && { term: "Island group", value: place.islandGroup },
     capital && { term: "Capital", value: capital.name },
     !holdsUnits &&
       place.capital && { term: "Status", value: "Provincial capital" },
@@ -586,15 +590,6 @@ function FactsSkeleton({ rows, label }: { rows: number; label: string }) {
   );
 }
 
-const ISSUED = new Intl.DateTimeFormat("en-PH", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  // The issuance's own zone. `issuedAt` carries +08:00, so this is the date
-  // PAGASA issued on, whatever zone the reader is in.
-  timeZone: "Asia/Manila",
-});
-
 function SubjectHeader({
   eyebrow,
   title,
@@ -615,7 +610,7 @@ function SubjectHeader({
           // the popup's.
           <Skeleton className="my-0.5 h-2 w-20 rounded-full bg-line" />
         )}
-        {issuedAt && <span>Issued {ISSUED.format(new Date(issuedAt))}</span>}
+        {issuedAt && <span>Issued {formatIssuedAt(issuedAt)}</span>}
       </div>
       <p className="mt-0.5 text-[15px]/5 font-semibold text-fg-heading">
         {title}

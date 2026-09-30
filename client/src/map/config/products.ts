@@ -38,6 +38,19 @@ import type { AdminLevel } from "@/map/types/features";
 export const OVERLAYS = ["raster", "boundaries", "stations"] as const;
 export type Overlay = (typeof OVERLAYS)[number];
 
+/**
+ * Controls a product offers under its layers in the rail.
+ *
+ * The same arrangement as OVERLAYS: an id the product declares and the rail
+ * knows how to draw (see panels/ProductAccordion `ProductControls`), rather
+ * than a component in the registry, so this file stays free of React and a
+ * control two products share is one entry, not two copies.
+ *
+ * - `station-markers` — clustered reading cards, or every station as a dot.
+ */
+export const PRODUCT_CONTROLS = ["station-markers"] as const;
+export type ProductControl = (typeof PRODUCT_CONTROLS)[number];
+
 export type ProductLayer = {
   /** Stable id, unique within its variable. */
   id: string;
@@ -115,6 +128,13 @@ export type ProductDefinition = {
    * that has been decided to draw an empty map.
    */
   overlays?: readonly Overlay[];
+  /**
+   * Settings that belong to this product rather than to the map as a whole,
+   * listed under its layers while it is expanded. Product-level only: a
+   * control that changed with the layer would move under the user's pointer
+   * as they picked one.
+   */
+  controls?: readonly ProductControl[];
   /** Empty or absent until CIS publishes a mappable layer for the product. */
   variables?: readonly ProductVariable[];
 };
@@ -148,6 +168,8 @@ export const PRODUCTS: readonly ProductDefinition[] = [
     // match the rail's own id; the others do not, which is why the two are
     // separate fields rather than one.
     cisProduct: "seasonal",
+    // Every seasonal layer draws stations, so the switch is never a no-op here.
+    controls: ["station-markers"],
     variables: [
       {
         id: "rainfall",
@@ -155,15 +177,16 @@ export const PRODUCTS: readonly ProductDefinition[] = [
         icon: CloudRain,
         layers: [
           {
-            id: "forecast",
-            label: "Forecast",
-            overlays: ["raster", "boundaries", "stations"],
-          },
-          {
             id: "percent-of-normal",
             label: "Percent of Normal",
             overlays: ["raster", "boundaries", "stations"],
           },
+          {
+            id: "forecast",
+            label: "Forecast",
+            overlays: ["raster", "boundaries", "stations"],
+          },
+
           // Stations alone, like temperature: the tercile probabilities are
           // published per station only, and the layer has no surface of its own —
           // borrowing percent of normal's would put a legend beside the pills
@@ -175,20 +198,24 @@ export const PRODUCTS: readonly ProductDefinition[] = [
           },
         ],
       },
-      // No layers: the province endpoint carries no temperature at all, and the
-      // station shape publishes one seasonal temperature. Give it sub-layers
-      // when CIS publishes a second mappable one, not before.
+      // Two layers off the station shape's one temperature: the mean itself
+      // (`tmean`) and its departure from normal (`tmeanAnomaly`), which are
+      // different quantities on different scales, as rainfall's forecast and
+      // percent of normal are.
       //
-      // Stations alone, and the only selection in the catalogue that draws no
-      // polygons: with nothing published per province there is nothing to paint
-      // them from, and drawing them anyway would offer a hit target that can
-      // never answer. The rail row is the leaf here, so the declaration sits on
-      // the variable.
+      // Stations alone, both of them: the province endpoint carries no
+      // temperature at all, so there is nothing to paint polygons from, and
+      // drawing them anyway would offer a hit target that can never answer.
+      // Declared once on the variable, which both layers inherit.
       {
         id: "temperature",
         label: "Temperature",
         icon: Thermometer,
         overlays: ["stations"],
+        layers: [
+          { id: "anomaly", label: "Anomaly" },
+          { id: "forecast", label: "Forecast" },
+        ],
       },
     ],
   },

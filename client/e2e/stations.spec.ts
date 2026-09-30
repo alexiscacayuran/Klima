@@ -35,6 +35,18 @@ async function pills(page: Page) {
 }
 
 /**
+ * Pick one of Temperature's layers on the rail: expand its group, then click
+ * the layer inside it — scoped to the group's own list, since rainfall has a
+ * "Forecast" too.
+ */
+async function selectTemperatureLayer(page: Page, layer: string) {
+  const group = page.getByRole("button", { name: "Temperature", exact: true });
+  if ((await group.getAttribute("aria-expanded")) !== "true") await group.click();
+  const list = page.locator(`[id="${await group.getAttribute("aria-controls")}"]`);
+  await list.getByRole("button", { name: layer, exact: true }).click();
+}
+
+/**
  * Wait until markers have settled.
  *
  * The count changes several times on the way in — geometry lands before values,
@@ -126,8 +138,8 @@ test.describe("station markers", () => {
     await settled(page);
 
     // Seasonal is the product the rail opens on, so Temperature is already
-    // visible; it has no sub-layers, which makes its own row the selection.
-    await page.getByRole("button", { name: "Temperature", exact: true }).click();
+    // visible; its row expands, and the layer under it is the selection.
+    await selectTemperatureLayer(page, "Forecast");
     await page.waitForTimeout(2500);
     await settled(page);
 
@@ -158,6 +170,42 @@ test.describe("station markers", () => {
     await expect(legend.locator("ol")).toHaveCount(1);
 
     await page.screenshot({ path: "e2e/__screenshots__/03-temperature.png" });
+  });
+
+  test("temperature anomaly shows signed departures", async ({ page }) => {
+    await page.goto("/");
+    await settled(page);
+
+    await selectTemperatureLayer(page, "Anomaly");
+    await page.waitForTimeout(2500);
+    await settled(page);
+
+    await page.mouse.move(700, 450);
+    for (let i = 0; i < 6; i += 1) {
+      await page.mouse.wheel(0, -600);
+      await page.waitForTimeout(800);
+    }
+    await settled(page);
+
+    // A departure, not a temperature: signed where it is above normal, and to
+    // the two decimals the published classes are drawn at.
+    const readings = (await pills(page)).filter((pill) => pill.kind === "station");
+    expect(readings.length).toBeGreaterThan(0);
+    expect(readings.some((pill) => /[+-]?\d+\.\d{2}\s*°C/.test(pill.text))).toBe(
+      true,
+    );
+    expect(readings.some((pill) => /\d\s*mm\b/.test(pill.text))).toBe(false);
+
+    // The anomaly's own table: seven classes on one °C bar.
+    const legend = page.getByRole("figure", { name: "Map legend" });
+    await expect(legend).toBeVisible();
+    await expect(legend).toContainText("°C");
+    await expect(legend.locator("ol")).toHaveCount(1);
+    await expect(legend.locator("li")).toHaveCount(7);
+
+    await page.screenshot({
+      path: "e2e/__screenshots__/03b-temperature-anomaly.png",
+    });
   });
 
   test("probabilistic forecast shows tercile pills", async ({ page }) => {
@@ -222,5 +270,63 @@ test.describe("station markers", () => {
     await expect(page.locator(".klima-popup")).toHaveCount(0);
 
     await page.screenshot({ path: "e2e/__screenshots__/04-probabilistic.png" });
+  });
+});
+
+test.describe("circle markers", () => {
+  test("draw every station unclustered, and terciles as pies", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+
+    await page.goto("/");
+    await settled(page);
+
+    // The seasonal product's own control, under its layers in the rail.
+    const toggle = page.getByRole("switch", { name: "Circle markers" });
+    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await settled(page, 60);
+
+    // No clustering: every station at national zoom, and none of them a disc
+    // offering to zoom in.
+    const dots = await pills(page);
+    expect(dots.length).toBeGreaterThanOrEqual(60);
+    expect(dots.every((dot) => dot.kind === "station")).toBe(true);
+
+    // The figure is on the face and the rest in the name: forecast rainfall
+    // is the default layer, so the name reads in mm and the face does not.
+    const labels = await page
+      .locator(".maplibregl-marker button")
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute("aria-label") ?? ""),
+      );
+    expect(labels.some((label) => /: \d+ mm$/.test(label))).toBe(true);
+    expect(dots.some((dot) => /^\d+$/.test(dot.text))).toBe(true);
+    await page.screenshot({ path: "e2e/__screenshots__/05-dots.png" });
+
+    // The terciles are a pie with nothing printed over it.
+    await page
+      .getByRole("button", { name: "Probabilistic Forecast", exact: true })
+      .click();
+    await expect
+      .poll(() => page.locator(".maplibregl-marker svg path").count(), {
+        timeout: 60_000,
+      })
+      .toBeGreaterThan(60);
+    // A station with no terciles this month keeps its dash, as a pill would.
+    const faces = (await pills(page)).map((dot) => dot.text);
+    expect(faces.every((text) => text === "" || text === "—")).toBe(true);
+    await page.screenshot({ path: "e2e/__screenshots__/06-dots-terciles.png" });
+
+    // Off again, and the clusters come back.
+    await toggle.click();
+    await expect
+      .poll(async () => (await pills(page)).some((pill) => pill.kind === "cluster"))
+      .toBe(true);
+
+    expect(errors).toEqual([]);
   });
 });

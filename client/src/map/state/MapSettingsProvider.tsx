@@ -4,6 +4,7 @@ import { useTheme } from '@/components/theme/useTheme'
 import { THEME_BASEMAP } from '@/map/config/styles'
 import { RASTER_LAYERS } from '@/map/layers'
 import { MapSettingsContext } from './mapSettingsContext'
+import type { StationMarkerStyle } from './mapSettingsContext'
 
 /** Seeded from the registry so a layer's default lives with its definition. */
 const initialVisibility = (): Record<string, boolean> =>
@@ -16,6 +17,8 @@ export function MapSettingsProvider({ children }: { children: ReactNode }) {
   const basemap = THEME_BASEMAP[theme]
   const [showBoundaries, setShowBoundaries] = useState(true)
   const [showStations, setShowStations] = useState(true)
+  const [stationMarkers, setStationMarkers] =
+    useState<StationMarkerStyle>('pills')
   const [showKalayaanInset, setShowKalayaanInset] = useState(false)
   const [visibleLayers, setVisibleLayers] = useState(initialVisibility)
 
@@ -33,6 +36,8 @@ export function MapSettingsProvider({ children }: { children: ReactNode }) {
       setShowBoundaries,
       showStations,
       setShowStations,
+      stationMarkers,
+      setStationMarkers,
       showKalayaanInset,
       setShowKalayaanInset,
       visibleLayers,
@@ -42,6 +47,7 @@ export function MapSettingsProvider({ children }: { children: ReactNode }) {
       basemap,
       showBoundaries,
       showStations,
+      stationMarkers,
       showKalayaanInset,
       visibleLayers,
       toggleLayer,

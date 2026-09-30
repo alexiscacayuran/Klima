@@ -51,18 +51,24 @@ export type SidePanelsState = {
   closeDetail: () => void
 
   /**
-   * The detail panel is at its wide size — half the viewport — rather than
-   * the column width it opens at. Reset when it closes, so it always opens
-   * narrow.
+   * The right-hand slot is at its wide size — half the viewport — rather than
+   * the column width it opens at, whichever of the two panels is in it.
    *
-   * Widening it closes the product rail, and narrowing it again does not bring
-   * the rail back — the same rule as the overview: the rail was put away on
-   * the way in, and reopening it would undo that on the user's behalf. Its
-   * button is how it returns, and it can come back beside the wide panel,
+   * One flag for the slot rather than one per panel: the overview and the
+   * detail panel take turns in the same place, so moving from one to the other
+   * — a station click from a wide overview, say — keeps the width the user
+   * chose instead of snapping the slot back to narrow under them. It resets
+   * only when the slot empties, so a panel opened into an empty slot still
+   * opens narrow.
+   *
+   * Widening closes the product rail, and narrowing again — by collapsing the
+   * panel or closing it — opens the rail: it was only put away to make room,
+   * and once the room is given back there is nothing to keep it closed for.
+   * While the slot is wide its button still brings it back beside the panel,
    * whose width already leaves the rail room.
    */
-  detailExpanded: boolean
-  toggleDetailExpanded: () => void
+  panelExpanded: boolean
+  togglePanelExpanded: () => void
 }
 
 export const SidePanelsContext = createContext<SidePanelsState>({
@@ -75,6 +81,6 @@ export const SidePanelsContext = createContext<SidePanelsState>({
   detailOpen: false,
   showDetail: () => {},
   closeDetail: () => {},
-  detailExpanded: false,
-  toggleDetailExpanded: () => {},
+  panelExpanded: false,
+  togglePanelExpanded: () => {},
 })

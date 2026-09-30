@@ -284,6 +284,9 @@ returns place names only, not climate data.
 the national fan-out to three requests. No other product understands them.
 `/locations?islandGroup=` uses the same three names and the same region
 grouping, so it lists exactly the provinces such a request covers.
+`/stations?islandGroup=` does too, and lists the stations inside them. Neither
+is a `location` value: `/stations` is already national, and the filter only
+narrows it.
 
 ### Extra units
 
@@ -659,14 +662,15 @@ The value lands under a key **named after `rankBy`**, so read it as
 | Param | | |
 |---|---|---|
 | `location` | optional | |
+| `islandGroup` | `luzon` \| `visayas` \| `mindanao` | Case-insensitive. Anything else is a `400` |
 | `type` | `synop` (81) \| `agromet` (22) \| `arg` (4) \| `radar` (1) | |
 | `product` | `dailyMonitoring` \| `seasonal` | Anything else is a `400` |
 
-108 stations unfiltered.
+108 stations unfiltered. All filters are optional and they combine.
 
 ```json
 [{ "stationId": 21, "station": "Ambulong, Tanauan, Batangas",
-   "lat": 14.0878, "long": 121.0672,
+   "lat": 14.08766485, "long": 121.0623871, "islandGroup": "Luzon",
    "stationMeta": "/api/v1/stations/21" }]
 ```
 
@@ -675,10 +679,37 @@ The value lands under a key **named after `rankBy`**, so read it as
 previously returned identity only, which made the layer 1 + N = 109 requests and
 forced a `localStorage` cache to exist at all. Neither is needed now.
 
-`lat`/`long` are the only geometry here. Everything else about a station —
-`locationId`, `elevation`, `type`, the normals — is still one-at-a-time from
-`/stations/:id` below, so a layer that needs to *join* stations to boundaries
-still pays per station. A layer that only needs to draw them does not.
+`lat`/`long` are the only geometry here. Apart from `islandGroup`, everything
+else about a station — `locationId`, `elevation`, `type`, the normals — is still
+one-at-a-time from `/stations/:id` below, so a layer that needs to *join*
+stations to boundaries still pays per station. A layer that only needs to draw
+them, or to split them by island group, does not.
+
+**`islandGroup` is the island group of the station's location**, copied from
+its `/locations` row. It is `Luzon`, `Visayas` or `Mindanao`, always set, and
+capitalised as `/locations` and drought capitalise it, so it compares to both
+with plain equality. Only the query parameter is case-insensitive.
+
+| `islandGroup=` | Stations | `&product=seasonal` | `&product=dailyMonitoring` |
+|---|---|---|---|
+| none | 108 | 73 | 85 |
+| `luzon` | 66 | 47 | 54 |
+| `visayas` | 22 | 14 | 17 |
+| `mindanao` | 20 | 12 | 14 |
+
+`islandGroup` with `location` is an intersection. `?islandGroup=visayas&location=Cebu`
+returns Cebu's 2 stations, and `?islandGroup=luzon&location=Cebu` returns `[]`,
+not an error. A bad `islandGroup` is checked first, so it is a `400` even when
+`location` would also have been a `404`:
+
+```json
+{ "message": "Invalid islandGroup. Accepted values: Luzon, Visayas, Mindanao." }
+```
+
+**An older CIS ignores the filter.** A deployment from before this change
+answers `?islandGroup=` with all 108 stations and no `islandGroup` field on
+the rows, not with a `400`. If the client has to work against one, check that
+the rows carry `islandGroup`, and filter on the client when they do not.
 
 `stationMeta` is a **relative path whose prefix is set by the CIS server's
 `NODE_ENV`** — `/api/v1/...` in development, `/v1/cis/...` otherwise. It resolves
@@ -695,7 +726,7 @@ decoration.
   "latDms": "14° 30' 16.92\" N", "longDms": "121° 0' 17.104\" E",
   "address": "RM 415, IPT Bldg. NAIA Terminal , Pasay City",
   "elevation": 21.063, "yearRecord": "1949 - present",
-  "prsd": "NCR", "obsTime": "HOURLY",
+  "prsd": "NCR", "obsTime": "HOURLY", "islandGroup": "Luzon",
   "norPeriod": "1991-2020", "norRainfallRemarks": null, "norTempRemarks": null }
 ```
 
@@ -748,6 +779,7 @@ neither, you get all 1,758 rows. Rows are ordered by `id`.
 | `islandGroup` | `Luzon`, `Visayas` or `Mindanao`. Always set |
 
 **`islandGroup` is assigned by region**, with the same grouping drought uses.
+Stations take theirs from this field (see `/stations` above).
 MIMAROPA and Bicol (Masbate included) are Luzon, NIR is Visayas, and BARMM is
 Mindanao. The values are capitalised exactly as drought's `islandGroup` field
 is (`"Luzon"`), so the two compare with plain equality. Only the query
@@ -844,7 +876,7 @@ Worth knowing before designing around something that is not there.
 |---|---|
 | **Raster / COG serving** | Still nothing *in this API* — no presigned URLs, no titiler. But the rasters are readable: MinIO serves the WebPs directly over an anonymous prefix in the dev stack, which is how the map paints them. See [raster-layers.md](raster-layers.md); production is still unsolved |
 | **GeoJSON** | No geometry from the API at all. Geometry is tiles-only |
-| **Station metadata in bulk** | `/stations` carries identity and coordinates; `locationId`, `elevation`, `type` and the normals are 1 + N from `/stations/:id` (§5) |
+| **Station metadata in bulk** | `/stations` carries identity, coordinates and `islandGroup`; `locationId`, `elevation`, `type` and the normals are 1 + N from `/stations/:id` (§5) |
 | **National / bbox / viewport queries** | Fan out over the 18 regions (`/locations?level=region` lists them). `/locations` is national but carries no climate data |
 | **Live updates** | The SSE channel under `/progress/:channelId` is admin-scoped import progress, not data push. Poll `/products` — `nextUpdateAt` for when the next issuance is due, `latestData` for what has actually landed |
 | **Consistent envelopes** | Some endpoints return an object, some an array, and the PSGC field is named differently per product. Normalize once, at the fetch boundary |

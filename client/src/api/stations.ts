@@ -1,4 +1,6 @@
 import { apiGet } from './client'
+import { parseIslandGroup } from './constants'
+import type { IslandGroup } from './constants'
 
 /**
  * The station directory — `GET /stations`.
@@ -31,6 +33,12 @@ export type Station = {
   name: string
   lng: number
   lat: number
+  /**
+   * The island group of the station's location, copied server-side from its
+   * `/locations` row. Null only against a CIS older than the field, which
+   * leaves it off every row (docs/cis-api.md §5).
+   */
+  islandGroup: IslandGroup | null
 }
 
 /** The wire shape, before the renaming above. */
@@ -39,6 +47,7 @@ type StationRow = {
   station: string
   lat: number | null
   long: number | null
+  islandGroup?: string
   stationMeta: string
 }
 
@@ -86,6 +95,7 @@ export async function fetchStations(
       name: row.station,
       lng: row.long,
       lat: row.lat,
+      islandGroup: parseIslandGroup(row.islandGroup),
     })
   }
   return stations

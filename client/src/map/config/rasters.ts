@@ -169,7 +169,7 @@ const RASTER_VARIANTS: Record<string, RasterVariant> = {
     mode: 'step',
     opacity: 0.8,
   },
-  // No entry for `seasonal:temperature`: the province endpoint carries rainfall
+  // No entry for either temperature layer: the province endpoint carries rainfall
   // only, and nothing is gridded for it (docs/cis-api.md §5). An absent entry is
   // what draws no surface.
 }

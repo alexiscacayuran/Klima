@@ -37,6 +37,7 @@ import {
 } from "./config/constants";
 import {
   DEFAULT_PRODUCT_ID,
+  cisProductForVariable,
   hasOverlay,
   overlaysForVariable,
   variableKey,
@@ -265,8 +266,13 @@ function MapChrome({ root }: { root: RefObject<HTMLDivElement | null> }) {
   // What the timeline's cards are thumbnails of: the surface, the choropleth,
   // or nothing — in which case the bar offers no strip at all.
   const snapshots = useSnapshotSource();
-  const { detailExpanded, productsOpen, openProducts, closeProducts } =
-    useSidePanels();
+  const {
+    panelExpanded,
+    detailOpen,
+    productsOpen,
+    openProducts,
+    closeProducts,
+  } = useSidePanels();
 
   return (
     <div ref={root} className="pointer-events-none absolute inset-0 z-10">
@@ -300,7 +306,7 @@ function MapChrome({ root }: { root: RefObject<HTMLDivElement | null> }) {
       </div>
 
       <ProductAccordion
-        className="absolute top-20 left-6 max-h-[calc(100%-13rem)]"
+        className="absolute top-20 bottom-32 left-6"
         open={productsOpen}
         onOpen={openProducts}
         onClose={closeProducts}
@@ -313,11 +319,12 @@ function MapChrome({ root }: { root: RefObject<HTMLDivElement | null> }) {
       />
 
       {/* The rail's mirror: the overview and detail panels, taking turns in
-          one slot. Same top as the rail, and a bottom at the line the rail's
-          height cap reaches — 128px up — so it stops clear of the legend in
-          the bottom-right corner exactly as the rail stops clear of the
-          timeline. A bottom rather than a max-height because the dock is a
-          row, and its panel's own cap has to resolve against a real height. */}
+          one slot. The rail's box exactly — top-20 and 128px up from the
+          bottom — so it stops clear of the legend in the bottom-right corner
+          as the rail stops clear of the timeline. A bottom rather than a
+          max-height on both, because each stacks its button and panel in one
+          grid cell, and the panel's own cap has to resolve against a real
+          height. */}
       <PanelDock className="absolute top-20 right-6 bottom-32" />
 
       {/* The bottom row: the timeline on the viewport's centre line, the legend
@@ -328,17 +335,17 @@ function MapChrome({ root }: { root: RefObject<HTMLDivElement | null> }) {
           legend. That is the same line the search bar above it is centred on,
           and 600 is close to that bar's width, so the two bars read as one
           composition rather than two unrelated widths. The timeline keeps 600px
-          while the sides have room and only then shrinks. The rail's max-height
+          while the sides have room and only then shrinks. The rail's box
           stops it 128px above the bottom edge and the bar's top sits at 96px,
           so the options panel in the left column, one legend-row tall, never
           runs into it. With its map previews open the bar grows upward by a
           card's height — the strip sits under the rail, so the rail rises with
           it. It stays in the centre column, so that only reaches the product
           rail on a viewport narrow enough to squeeze the left column to
-          nothing. The wide detail panel is another matter: at half the
-          viewport it reaches over the centre column, down to the 128px line
-          the strip would grow past, so the bar is held compact while it is
-          wide.
+          nothing. The wide right-hand panels are another matter: at half the
+          viewport they reach over the centre column, down to the 128px line
+          the strip would grow past, so the bar is held compact while either
+          is wide.
 
           The left column holds MapOptions, pinned to its left edge. It is
           `min-w-0` so the panel's width never pushes the timeline off centre.
@@ -362,7 +369,13 @@ function MapChrome({ root }: { root: RefObject<HTMLDivElement | null> }) {
           onChange={setDate}
           placeholder={TIMELINE_PLACEHOLDER[status]}
           loading={status === "loading"}
-          compact={detailExpanded}
+          // What is drawn wide, not the flag alone: the overview ignores the
+          // flag outside seasonal, and the flag now outlives a switch between
+          // the two panels, so it can be set under a narrow empty state.
+          compact={
+            panelExpanded &&
+            (detailOpen || cisProductForVariable(variable) === "seasonal")
+          }
           preview={
             snapshots
               ? {

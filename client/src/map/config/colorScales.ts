@@ -43,6 +43,13 @@ export type ScaleBreak = {
    * and colour alone rather than inventing one.
    */
   label?: string;
+  /**
+   * The class's bounds as the published legend prints them, where they are not
+   * the plain break-to-break span — a table printed to two decimals whose
+   * breaks sit between them (see TEMPERATURE_ANOMALY_SCALE). Absent, the range
+   * is derived from the breaks.
+   */
+  range?: string;
 };
 
 /** One class, as the legend lists it and the popup names it. */
@@ -138,10 +145,16 @@ export type ColorScale = {
  * which recolours a class at its midpoint in the ramp: with an uneven domain —
  * 50 mm steps at the bottom, 100 mm at the top — that would print swatches that
  * appear nowhere in the published table.
+ *
+ * `decimals`, for a table whose bounds are printed to a fixed precision, makes
+ * `classAt` read the value as printed — rounded the way `toFixed` rounds, which
+ * is how every consumer prints it — so a figure and the class it is painted in
+ * cannot disagree at a boundary. Absent, the value is read as it comes.
  */
 function buildScale(
   unit: string,
   breaks: readonly ScaleBreak[],
+  { decimals }: { decimals?: number } = {},
 ): ColorScale {
   const domain = breaks.map((step) => step.value);
   const ramp = chroma.scale(breaks.map((step) => step.color)).domain(domain);
@@ -153,7 +166,9 @@ function buildScale(
       to: next ? next.value : null,
       color: step.color,
       label: step.label,
-      range: next ? `${step.value}–${next.value}` : `≥ ${step.value}`,
+      range:
+        step.range ??
+        (next ? `${step.value}–${next.value}` : `≥ ${step.value}`),
     };
   });
 
@@ -165,8 +180,10 @@ function buildScale(
   // Downwards, so the first class that starts at or below the value wins and
   // the open-topped last class needs no upper bound to test against.
   const classAt = (value: number): ScaleClass => {
+    const read =
+      decimals === undefined ? value : Number(value.toFixed(decimals));
     for (let index = classes.length - 1; index > 0; index -= 1) {
-      if (value >= classes[index].from) return classes[index];
+      if (read >= classes[index].from) return classes[index];
     }
     return classes[0];
   };
@@ -377,8 +394,8 @@ export const RAINFALL_TERCILE_SCALES: Record<Tercile, ColorScale> = {
  * ramp is the conventional cool-to-warm reading so that nothing has to be
  * learned to use it, and the words name the band rather than judging it: a 27°
  * month in Metro Manila is unremarkable, and whether a temperature is *unusual*
- * is `tmeanAnomaly`'s question, not this one's — the same division the two
- * rainfall tables above keep.
+ * is `tmeanAnomaly`'s question, not this one's (TEMPERATURE_ANOMALY_SCALE
+ * below) — the same division the two rainfall tables above keep.
  */
 export const SEASONAL_TEMPERATURE_SCALE = buildScale("°C", [
   { value: 18, color: "#2c7bb6", label: "Cool" },
@@ -387,3 +404,75 @@ export const SEASONAL_TEMPERATURE_SCALE = buildScale("°C", [
   { value: 27, color: "#fdae61", label: "Hot" },
   { value: 30, color: "#d7191c", label: "Very hot" },
 ]);
+
+/**
+ * Seasonal mean temperature anomaly: the signed departure from normal, in °C.
+ *
+ * Seven classes, and PAGASA's own — the words, the bounds and the colours are
+ * copied from the temperature anomaly legend of the seasonal bulletin, the
+ * hexes sampled from its swatches. Symmetric about zero: near average is
+ * ±0.50, and each side steps out at 1 and 2 degrees.
+ *
+ * **Read at two decimals.** The legend is printed to two, and closes each class
+ * on the side *nearer zero* — 0.50 is near average and 0.51 slightly above,
+ * while −0.50 is near and −0.51 slightly below — which a lower-inclusive break
+ * at ±0.50 cannot say for both signs. CIS publishes three decimals, so the
+ * table classifies the value as printed to two (`decimals`), and each break is
+ * the published lower bound in that precision: −2.00, −1.00, −0.50, then 0.51,
+ * 1.01, 2.01 above zero. A figure then always sits in the class the legend
+ * prints it under, and `range` carries the published bounds for the legend's
+ * tooltip, since those breaks alone would derive "0.51–1.01".
+ *
+ * Near average is white, as published. Every consumer that draws a swatch on
+ * a white panel gives it an edge (see isPale in utils/ink).
+ */
+export const TEMPERATURE_ANOMALY_SCALE = buildScale(
+  "°C",
+  [
+    {
+      // The floor is the domain's, not a published bound: nothing reads it but
+      // the ramp, and the class runs down from −2.00 without end.
+      value: -3,
+      color: "#192670",
+      label: "Way below average",
+      range: "< −2.00",
+    },
+    {
+      value: -2,
+      color: "#4b72f5",
+      label: "Below average",
+      range: "−2.00 – −1.01",
+    },
+    {
+      value: -1,
+      color: "#9bddfa",
+      label: "Slightly below average",
+      range: "−1.00 – −0.51",
+    },
+    {
+      value: -0.5,
+      color: "#ffffff",
+      label: "Near average",
+      range: "−0.50 – 0.50",
+    },
+    {
+      value: 0.51,
+      color: "#efc1bf",
+      label: "Slightly above average",
+      range: "0.51 – 1.00",
+    },
+    {
+      value: 1.01,
+      color: "#dd3323",
+      label: "Above average",
+      range: "1.01 – 2.00",
+    },
+    {
+      value: 2.01,
+      color: "#921e14",
+      label: "Way above average",
+      range: "> 2.00",
+    },
+  ],
+  { decimals: 2 },
+);

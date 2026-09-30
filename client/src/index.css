@@ -201,6 +201,13 @@
      button from a coloured rectangle in this system. */
   --shadow-glint: var(--cis-glint);
 
+  /* Strong UI curves, named apart from Tailwind's own ease-out/ease-in-out so
+     the utilities already in use keep their stock values. -out is for things
+     arriving; -in-out for things moving or reshaping where they stand. The
+     same two curves are written in map/utils/easing.ts for JS tweens. */
+  --ease-strong-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-strong-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
   /* The pin's pulse while the detail panel is open (overlays/LocationPopup).
      A ring swelling out of the dot and fading, once every two seconds — slow
      enough to read as "this is where the panel is about" rather than as an
@@ -468,4 +475,126 @@
 .klima-popup .maplibregl-popup-close-button:focus-visible {
   outline: 2px solid var(--cis-brand);
   outline-offset: 1px;
+}
+
+/* ---------------------------------------------------------------------------
+   Overview chart motion (map/panels/OverviewPanel).
+
+   A bar's length is its inline `transform: scaleX()`, which transitions when
+   the month, resolution or metric changes, so a bar visibly grows or shrinks
+   to its new value. Its entrance is on the separate `scale` property instead:
+   an inline style outranks @starting-style, so a starting transform would
+   never be seen, while `scale` is set by nothing else and composes with it.
+   --------------------------------------------------------------------------- */
+.overview-bar {
+  transform-origin: left center;
+  transition:
+    transform 250ms var(--ease-strong-in-out),
+    scale 250ms var(--ease-strong-out);
+}
+
+@starting-style {
+  .overview-bar {
+    scale: 0 1;
+  }
+}
+
+/* A page of the island list, entering from the side it was paged towards. */
+.overview-page {
+  transition:
+    opacity 180ms var(--ease-strong-out),
+    translate 180ms var(--ease-strong-out);
+}
+
+@starting-style {
+  .overview-page {
+    opacity: 0;
+    translate: 8px 0;
+  }
+  .overview-page[data-direction="prev"] {
+    translate: -8px 0;
+  }
+}
+
+/* Fewer and gentler: bars take their value without travelling, and a page
+   still fades, since the fade says the content changed, but does not slide. */
+@media (prefers-reduced-motion: reduce) {
+  .overview-bar {
+    transition: none;
+  }
+  .overview-page {
+    transition: opacity 180ms ease;
+  }
+  @starting-style {
+    .overview-page,
+    .overview-page[data-direction="prev"] {
+      translate: none;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Side panel open and close (map/panels/SidePanel, ProductAccordion, PanelDock).
+
+   A panel grows out of the corner its button stands in, and folds back into
+   it: the popover's recipe — a fade and a 4% scale — anchored at that corner
+   rather than at the centre, so the panel and the button read as one object
+   changing size. The caller sets the corner with an `origin-*` utility.
+
+   Closed is a state of a mounted element rather than an unmount, so the exit
+   can play. `visibility` is what makes that safe: transitioned, it stays
+   visible until the fade ends and then drops the panel out of hit testing,
+   the tab order and the accessibility tree, exactly as unmounting did. `inert`
+   (set alongside data-closed) covers the 150ms in between.
+
+   Transitions rather than keyframes, so a panel closed and reopened mid-fade
+   turns round from where it is. Out is quicker than in: the panel arriving is
+   what is being watched, the panel leaving is not.
+
+   The width keeps its own ease-out: widening and narrowing the detail panel
+   is a separate motion from opening it, and was tuned on its own.
+   --------------------------------------------------------------------------- */
+.side-panel {
+  transition:
+    width 200ms ease-out,
+    opacity 200ms var(--ease-strong-out),
+    scale 200ms var(--ease-strong-out),
+    visibility 200ms;
+}
+
+.side-panel[data-closed] {
+  opacity: 0;
+  scale: 0.96;
+  visibility: hidden;
+  transition-duration: 150ms;
+}
+
+/* The button the closed panel leaves behind. A fade alone: it sits under the
+   panel's header, so the panel's own scale is the only movement needed. Its
+   hover colours are here too — this rule replaces any transition utility on
+   the element, so they would otherwise stop easing. */
+.panel-launcher {
+  transition:
+    opacity 150ms var(--ease-strong-out),
+    visibility 150ms,
+    color 150ms,
+    border-color 150ms;
+}
+
+.panel-launcher[data-closed] {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Fewer and gentler: the panels still fade, since the fade says they came or
+   went, but do not change size. */
+@media (prefers-reduced-motion: reduce) {
+  .side-panel {
+    transition:
+      opacity 200ms ease,
+      visibility 200ms;
+  }
+  .side-panel[data-closed] {
+    scale: none;
+  }
 }

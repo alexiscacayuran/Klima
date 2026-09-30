@@ -162,8 +162,8 @@ function endLabelStyle(index: number, lastIndex: number) {
  * Geometrically it is a scale, not a row of columns: the steps are anchored to
  * the ends of the track and spaced between, which is why they are absolutely
  * positioned rather than laid out in a grid. The track is thick enough to hold
- * the ticks, and the steps behind the playhead are dropped — the fill has
- * taken that stretch and says where playback has reached.
+ * the ticks, and the steps behind the playhead are drawn in a darker brand on
+ * the fill that has taken that stretch and says where playback has reached.
  *
  * "Forward" here means along the array, not forward in time. A product whose
  * window runs from its newest observation backwards plays into the past, which
@@ -422,9 +422,9 @@ export function TimelineBar({
         >
           {steps.map((step, index) => {
             const isActive = index === activeIndex;
-            // Steps already stepped past are not drawn. The fill has taken
-            // that stretch of track, and a tick sitting on it would only ask
-            // to be read as a second, contradictory position marker.
+            // Steps already stepped past sit on the fill, so they are drawn in
+            // a darker brand that reads on it — kept small, so none of them can
+            // be mistaken for the playhead.
             const isPast = activeIndex !== -1 && index < activeIndex;
             return (
               <button
@@ -471,9 +471,16 @@ export function TimelineBar({
                       // 20px against the 16px track: the active tick stands
                       // proud of it on both edges, which is what marks the
                       // playhead where the fill's own colour cannot — it is
-                      // brand on brand along the stretch already played.
-                      isActive ? "size-5 bg-white" : "size-2 bg-line-strong",
-                      isPast && "invisible",
+                      // brand on brand along the stretch already played. Near
+                      // black in light, white in dark: a white knob washes out
+                      // against the light panel's pale track.
+                      isActive
+                        ? "size-5 bg-fg-heading"
+                        : isPast
+                          ? // brand-strong is the lighter step in dark mode;
+                            // brand-medium is the dark teal there.
+                            "size-2 bg-brand-strong dark:bg-brand-medium"
+                          : "size-2 bg-line-strong",
                     )}
                   />
                 </span>

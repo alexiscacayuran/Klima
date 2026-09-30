@@ -15,6 +15,12 @@ export type SidePanelProps = {
   /** Controls at the header's right end — a close button, say. */
   actions?: ReactNode;
   children: ReactNode;
+  /**
+   * Put away, but still mounted: faded and shrunk into its corner, hidden and
+   * inert once there, so closing plays as well as opening (see `.side-panel`
+   * in index.css). The caller names the corner with an `origin-*` class.
+   */
+  closed?: boolean;
   className?: string;
 };
 
@@ -41,16 +47,19 @@ export function SidePanel({
   heading,
   actions,
   children,
+  closed = false,
   className,
 }: SidePanelProps) {
   return (
     <section
       aria-label={title}
+      data-closed={closed || undefined}
+      inert={closed}
       className={cn(
         // The width is the caller's: the detail panel changes its own, and
-        // twMerge lets that override this default rather than fight it.
-        "pointer-events-auto flex w-[360px] flex-col font-cis",
-        "transition-[width] duration-200 ease-out motion-reduce:transition-none",
+        // twMerge lets that override this default rather than fight it. Its
+        // transition is in `.side-panel`, with the open and close.
+        "side-panel pointer-events-auto flex w-[360px] flex-col font-cis",
         "overflow-hidden rounded-panel border border-line bg-panel-strong shadow-panel backdrop-blur-md",
         className,
       )}
@@ -72,10 +81,12 @@ export function SidePanel({
 export function PanelIconButton({
   label,
   onClick,
+  disabled,
   children,
 }: {
   label: string;
   onClick: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -84,10 +95,12 @@ export function PanelIconButton({
       aria-label={label}
       title={label}
       onClick={onClick}
+      disabled={disabled}
       className={cn(
         "flex size-7 items-center justify-center rounded-field text-fg-subtle outline-none",
         "transition-colors duration-150 hover:bg-well hover:text-fg-heading",
         "focus-visible:ring-3 focus-visible:ring-brand/50",
+        "disabled:pointer-events-none disabled:opacity-40",
         "[&_svg]:size-4",
       )}
     >

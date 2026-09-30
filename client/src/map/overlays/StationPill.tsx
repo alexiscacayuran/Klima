@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { isPale } from "@/map/utils/ink";
 
 /**
  * A station's reading, as a card small enough to sit on the map at its own
@@ -146,6 +147,10 @@ export function StationPill({
 
         A split strip keeps the same box and divides it: flex-grow by share, so
         the bands fill the height in proportion whatever the shares sum to.
+
+        A class published as white — near average on the anomaly scale — takes
+        a hairline on its inner edge, so it reads as a white band rather than
+        as no band at all.
       */}
       {strip?.length ? (
         <span
@@ -163,7 +168,10 @@ export function StationPill({
       ) : (
         <span
           aria-hidden
-          className="absolute inset-y-0 right-0 w-[5px]"
+          className={cn(
+            "absolute inset-y-0 right-0 w-[5px]",
+            color && isPale(color) && "border-l border-line",
+          )}
           style={{ backgroundColor: color ?? "var(--cis-line)" }}
         />
       )}

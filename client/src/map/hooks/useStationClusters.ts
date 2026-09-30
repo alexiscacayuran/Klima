@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { MapGeoJSONFeature } from 'maplibre-gl'
 import { SOURCE_IDS } from '@/map/config/constants'
 import { useMapEvent } from './useMapEvent'
@@ -192,6 +192,10 @@ export function useStationClusters(enabled: boolean): StationItem[] {
   // the map has gone quiet produces no move and no further sourcedata once its
   // tiles are in.
   useMapEvent('idle', read)
+  // And when switched. Off, to drop the list at once rather than leave it to
+  // come back stale when the hook is switched on again — nothing above fires
+  // for a hook that has been disabled. On, to pick up any tiles already there.
+  useEffect(read, [read])
 
   return items
 }

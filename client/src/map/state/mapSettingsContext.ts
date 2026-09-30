@@ -3,6 +3,17 @@ import type { BasemapId } from '@/map/config/styles'
 import { DEFAULT_BASEMAP } from '@/map/config/styles'
 
 /**
+ * The two ways the station layer can look.
+ *
+ * `pills` is the reading card — value, unit, name and a class strip — thinned
+ * by clustering until the camera has room for it. `dots` is the map-first
+ * alternative: no clustering, no name, just a disc in the class colour with the
+ * figure set inside it (or a pie of the terciles), so the pattern across every
+ * station is on screen at once.
+ */
+export type StationMarkerStyle = 'pills' | 'dots'
+
+/**
  * View settings shared between the map and the chrome around it.
  *
  * Context rather than prop drilling because the toolbar sits *outside* <Map> —
@@ -35,6 +46,15 @@ export type MapSettings = {
   setShowStations: (visible: boolean) => void
 
   /**
+   * How the station markers are drawn, once they are drawn at all: clustered
+   * reading cards, or every station as a coloured dot at its own position.
+   * Set from the seasonal product's controls in the rail (see
+   * config/products `controls`); overlays/StationMarkers is what obeys it.
+   */
+  stationMarkers: StationMarkerStyle
+  setStationMarkers: (style: StationMarkerStyle) => void
+
+  /**
    * Whether the magnified Kalayaan inset is over the map (see
    * overlays/KalayaanInset). Off until asked for: it is a second map, and a
    * second WebGL context is not something to spend on everyone's first load.
@@ -57,6 +77,8 @@ export const MapSettingsContext = createContext<MapSettings>({
   setShowBoundaries: () => {},
   showStations: true,
   setShowStations: () => {},
+  stationMarkers: 'pills',
+  setStationMarkers: () => {},
   showKalayaanInset: false,
   setShowKalayaanInset: () => {},
   visibleLayers: {},
