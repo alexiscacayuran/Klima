@@ -1,4 +1,5 @@
 import { createContext } from 'react'
+import type { OverviewSource } from '@/map/panels/overviewSummary'
 
 /**
  * The side panels: whether the product rail is open on the left, and on the
@@ -34,6 +35,16 @@ export type SidePanelsState = {
   overviewOpen: boolean
   openOverview: () => void
   closeOverview: () => void
+  /**
+   * The resolution the overview counts — its Provinces and Stations tabs.
+   *
+   * Here rather than in the panel because the dock's button for it counts the
+   * same thing (see OverviewLauncher): closed on the stations tab, the button
+   * shows the stations' split, and reopening it finds the tab where it was —
+   * even after the detail panel has had the slot and the overview unmounted.
+   */
+  overviewSource: OverviewSource
+  setOverviewSource: (source: OverviewSource) => void
 
   /** The detail panel is showing — which needs a selection to describe. */
   detailOpen: boolean
@@ -78,6 +89,8 @@ export const SidePanelsContext = createContext<SidePanelsState>({
   overviewOpen: false,
   openOverview: () => {},
   closeOverview: () => {},
+  overviewSource: 'provinces',
+  setOverviewSource: () => {},
   detailOpen: false,
   showDetail: () => {},
   closeDetail: () => {},

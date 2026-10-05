@@ -1,4 +1,5 @@
 import chroma from "chroma-js";
+import type { DroughtStatus } from "@/api/drought";
 
 /**
  * The published symbology for one mapped layer — the colours the choropleth
@@ -44,6 +45,11 @@ export type ScaleBreak = {
    */
   label?: string;
   /**
+   * The label's abbreviation as PAGASA prints it — "AN", "NN", "BN" — for a
+   * figure too small to carry the words. Optional, like the label it shortens.
+   */
+  tag?: string;
+  /**
    * The class's bounds as the published legend prints them, where they are not
    * the plain break-to-break span — a table printed to two decimals whose
    * breaks sit between them (see TEMPERATURE_ANOMALY_SCALE). Absent, the range
@@ -60,6 +66,7 @@ export type ScaleClass = {
   to: number | null;
   color: string;
   label?: string;
+  tag?: string;
   /**
    * The bounds as printed — "100–200", "≥ 500". Unit-free on purpose: a legend
    * states its unit once in its own heading rather than on every row.
@@ -166,6 +173,7 @@ function buildScale(
       to: next ? next.value : null,
       color: step.color,
       label: step.label,
+      tag: step.tag,
       range:
         step.range ??
         (next ? `${step.value}–${next.value}` : `≥ ${step.value}`),
@@ -273,10 +281,10 @@ export const RAINFALL_FORECAST_SCALE = buildScale("mm", [
  * bulletin draws no line inside it.
  */
 export const RAINFALL_PERCENT_OF_NORMAL_SCALE = buildScale("%", [
-  { value: 0, color: "#e0301f", label: "Way below normal" },
-  { value: 40, color: "#f4f04f", label: "Below normal" },
-  { value: 80, color: "#3d8b2e", label: "Near normal" },
-  { value: 120, color: "#2323d9", label: "Above normal" },
+  { value: 0, color: "#e0301f", label: "Way below normal", tag: "WBN" },
+  { value: 40, color: "#f4f04f", label: "Below normal", tag: "BN" },
+  { value: 80, color: "#3d8b2e", label: "Near normal", tag: "NN" },
+  { value: 120, color: "#2323d9", label: "Above normal", tag: "AN" },
 ]);
 
 /**
@@ -476,3 +484,73 @@ export const TEMPERATURE_ANOMALY_SCALE = buildScale(
   ],
   { decimals: 2 },
 );
+
+/**
+ * One class of a published classification that is *named* rather than
+ * measured: a unit is in it or not, and there is no number behind it to place
+ * on a ramp.
+ *
+ * Not a ColorScale. Everything that type does — breaks, ranges, `colorAt`
+ * between stops, a legend printing the value each cell starts at — assumes a
+ * quantity, and drought status is an ordered set of words. Faking one with
+ * ordinals 0–3 would let a ramp invent a colour between "Dry spell" and
+ * "Drought" and a legend print "2+".
+ */
+export type Category<K extends string = string> = {
+  /** The published name, which is also the key the data is matched on. */
+  label: K;
+  /** The hex as published. Copied, never re-derived. */
+  color: string;
+  /** What the class means — the legend's tooltip. */
+  description: string;
+  /**
+   * How much of this class's fill the map paints, as a share of its layer's
+   * own opacity, when it should recede rather than stand level with the rest.
+   * Absent is all of it. The legend always draws the published colour.
+   */
+  opacity?: number;
+};
+
+/**
+ * Drought status, mildest first — the order CIS lists them in and the order the
+ * legend reads.
+ *
+ * Hexes are CIS's `/drought/legend`, which docs/cis-api.md §5 says to use
+ * verbatim. The descriptions are that legend's, shortened; its "Drought" row
+ * opens "Dry spell is defined as…", a slip corrected here to the class it
+ * describes.
+ *
+ * "Not affected" recedes. It is published as pure white, which the docs warn
+ * reads as a hole against most basemaps — and at full strength it would also be
+ * the loudest fill on a map whose news is the three classes above it, since in
+ * most months it is most of the country. It keeps its colour and is painted at
+ * a fraction of the others' strength: still told apart from a province the
+ * month says nothing about, which is not painted at all, but no longer drawing
+ * the eye away from the dry ones. The other three are exact.
+ */
+export const DROUGHT_STATUS_CLASSES: readonly Category<DroughtStatus>[] = [
+  {
+    label: "Not affected",
+    color: "#ffffff",
+    description: "Normal conditions",
+    opacity: 0.35,
+  },
+  {
+    label: "Dry condition",
+    color: "#ffff00",
+    description:
+      "2 consecutive months of below-normal rainfall (21–30% below average)",
+  },
+  {
+    label: "Dry spell",
+    color: "#ffaa00",
+    description:
+      "3 consecutive months of below-normal rainfall (21–30% below average)",
+  },
+  {
+    label: "Drought",
+    color: "#a80000",
+    description:
+      "3 consecutive months of way-below-normal rainfall (over 60% below average)",
+  },
+];

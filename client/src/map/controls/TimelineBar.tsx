@@ -21,11 +21,11 @@ export type TimelinePreview = {
 
 type TimelineBarProps = {
   /**
-   * The window, in the order it should be printed — which is not always
-   * chronological: a monitoring product runs from its newest observation
-   * backwards. This component lays out whatever order it is given and does not
-   * sort, because the order is a property of the product (see
-   * config/timeline.ts PRODUCT_TIMELINES).
+   * The window, earliest first — every product's, including those whose window
+   * reaches back from its newest observation (see config/timeline.ts
+   * `timelineSteps`). Laid out and played in the order given, with no notion of
+   * which way the product's window runs: that decides only where the selection
+   * opens, which is the caller's `value`.
    *
    * Must be referentially stable across renders (a module constant or a
    * useMemo) — it is a dependency of the playback timer, and a fresh array
@@ -165,9 +165,10 @@ function endLabelStyle(index: number, lastIndex: number) {
  * the ticks, and the steps behind the playhead are drawn in a darker brand on
  * the fill that has taken that stretch and says where playback has reached.
  *
- * "Forward" here means along the array, not forward in time. A product whose
- * window runs from its newest observation backwards plays into the past, which
- * is the direction its own data reads in.
+ * Steps arrive in time order, so left to right is earlier to later and playback
+ * always runs forward in time. A window that opens on its latest step — an
+ * observation record — therefore opens at the right-hand end, and play from
+ * there replays it from the earliest.
  *
  * Below the rail, when the caller supplies a `preview`, sits a strip of map
  * snapshots: one card per step, centred under its tick, the selected one
@@ -471,11 +472,13 @@ export function TimelineBar({
                       // 20px against the 16px track: the active tick stands
                       // proud of it on both edges, which is what marks the
                       // playhead where the fill's own colour cannot — it is
-                      // brand on brand along the stretch already played. Near
-                      // black in light, white in dark: a white knob washes out
-                      // against the light panel's pale track.
+                      // brand on brand along the stretch already played. Dark
+                      // gray in light, white in dark: a white knob washes out
+                      // against the light panel's pale track. zinc-700 rather
+                      // than a token because the theme has no step between
+                      // fg-heading (zinc-950) and fg-body (zinc-500).
                       isActive
-                        ? "size-5 bg-fg-heading"
+                        ? "size-5 bg-zinc-700 dark:bg-fg-heading"
                         : isPast
                           ? // brand-strong is the lighter step in dark mode;
                             // brand-medium is the dark teal there.

@@ -53,28 +53,29 @@ import {
   productIdFromKey,
 } from "@/map/config/products";
 import { formatIssuedAt, formatStepId } from "@/map/config/timeline";
-import { useSeasonalProvinces } from "@/map/hooks/useSeasonalProvinces";
-import { useSeasonalStations } from "@/map/hooks/useSeasonalStations";
-import { useStations } from "@/map/hooks/useStations";
-import { useTween } from "@/map/hooks/useTween";
+import { choroplethMonth, useChoropleth } from "@/map/hooks/useChoropleth";
+import type { Choropleth } from "@/map/hooks/useChoropleth";
 import { useSidePanels } from "@/map/state/useSidePanels";
 import { useSelection } from "@/map/state/useSelection";
-import { easeStrongInOut, easeStrongOut } from "@/map/utils/easing";
 import { inkOn, isPale } from "@/map/utils/ink";
 import { BLUE, GREEN, YELLOW } from "./charts/chartStyle";
+import { ClassDonut } from "./charts/ClassDonut";
 import {
   byIsland,
+  classCounts,
+  droughtClassing,
+  droughtUnits,
   islandDistributions,
+  leadClass,
   METRICS_FOR,
-  pnDistribution,
-  provinceUnits,
+  PN_CLASSING,
   RANK_METRICS,
   ranking,
-  stationUnits,
   tercileCounts,
 } from "./overviewSummary";
 import type {
   ClassCount,
+  IslandDistribution,
   OverviewSource,
   OverviewUnit,
   RankedUnit,
@@ -83,6 +84,7 @@ import type {
 import { NAME_COLUMNS, paginateIslands } from "./islandPages";
 import type { IslandPage, IslandSort } from "./islandPages";
 import { PanelIconButton, SidePanel } from "./SidePanel";
+import { useOverviewUnits } from "./useOverviewUnits";
 
 export type OverviewPanelProps = {
   /** Placement and height cap from the dock; the frame sizes its own width. */
@@ -103,10 +105,12 @@ export type OverviewPanelProps = {
  * For the seasonal forecast it is the scrubbed month nationally: how many
  * provinces or stations fall in each percent-of-normal class, the same split
  * per island group, the stations' likeliest outcomes, and the wettest and
- * driest places. Every figure is a count of the fan-outs the map already
- * draws from (useSeasonalProvinces, useSeasonalStations), so it costs no
- * request of its own and cannot disagree with the map beneath it. Other
- * products publish nothing to summarise yet, and say so.
+ * driest places. For El Niño / La Niña it is the drought layer's scrubbed
+ * month: how many provinces are in each status, nationally and per island
+ * group. Every figure is a count of the fan-outs the map already draws from
+ * (see useOverviewUnits, useChoropleth), so it costs no request of its own
+ * and cannot disagree with the map beneath it. Other products publish nothing
+ * to summarise yet, and say so.
  *
  * It expands to two columns at the detail panel's width, and shares that
  * panel's flag: the width belongs to the slot the two take turns in (see
@@ -119,9 +123,13 @@ export function OverviewPanel({ className, closed }: OverviewPanelProps) {
     ? findProduct(productIdFromKey(variable))
     : undefined;
   const seasonal = cisProductForVariable(variable) === "seasonal";
+  // The drought layers' statuses; null under any other layer, which asks for
+  // nothing.
+  const choropleth = useChoropleth();
+  const summarised = seasonal || choropleth !== null;
   // An empty state has nothing to spread across two columns, so a product
-  // switch away from seasonal draws it narrow whatever the flag says.
-  const wide = seasonal && panelExpanded;
+  // switch away from a summarised one draws it narrow whatever the flag says.
+  const wide = summarised && panelExpanded;
 
   return (
     <SidePanel
@@ -139,7 +147,7 @@ export function OverviewPanel({ className, closed }: OverviewPanelProps) {
       )}
       actions={
         <>
-          {seasonal && (
+          {summarised && (
             <PanelIconButton
               label={wide ? "Collapse overview" : "Expand overview"}
               onClick={togglePanelExpanded}
@@ -156,6 +164,13 @@ export function OverviewPanel({ className, closed }: OverviewPanelProps) {
       {seasonal ? (
         <SeasonalOverview
           productLabel={product?.label ?? "Seasonal forecast"}
+          stepId={date}
+          wide={wide}
+        />
+      ) : choropleth ? (
+        <DroughtOverview
+          choropleth={choropleth}
+          productLabel={product?.label ?? "Drought"}
           stepId={date}
           wide={wide}
         />
@@ -182,9 +197,11 @@ export function OverviewPanel({ className, closed }: OverviewPanelProps) {
 /**
  * The seasonal summary for one month, at the resolution its tabs pick.
  *
- * The resolution, ranking metric and island filter are the panel's own: they
- * change what this panel counts and nothing on the map. They outlive a month
- * change, so scrubbing the timeline re-counts the same view.
+ * The resolution, ranking metric and island filter change what this panel
+ * counts and nothing on the map. They outlive a month change, so scrubbing
+ * the timeline re-counts the same view. The resolution is kept with the side
+ * panels rather than here, because the dock's button counts it too (see
+ * SidePanelsState.overviewSource).
  */
 function SeasonalOverview({
   productLabel,
@@ -195,110 +212,49 @@ function SeasonalOverview({
   stepId: string | null;
   wide: boolean;
 }) {
-  const [source, setSource] = useState<OverviewSource>("provinces");
+  const { overviewSource: source, setOverviewSource: setSource } =
+    useSidePanels();
   const [metric, setMetric] = useState<RankMetric>("pn");
   const [island, setIsland] = useState<IslandGroup | "all">("all");
   const [islandSort, setIslandSort] = useState<IslandSort>("name");
-  const provinces = useSeasonalProvinces(true);
-  const stations = useSeasonalStations(true);
-  // Where each station's island group comes from: the forecast rows name no
-  // place. The same shared request the station markers make.
-  const directory = useStations("seasonal");
+  const lists = useOverviewUnits(stepId);
 
-  const provinceList = useMemo(
-    () =>
-      provinces.status === "ready" && stepId
-        ? provinceUnits(provinces.provinces, stepId)
-        : null,
-    [provinces, stepId],
-  );
-  const stationList = useMemo(() => {
-    if (stations.status !== "ready" || directory.status !== "ready" || !stepId)
-      return null;
-    const islandGroups = new Map(
-      directory.stations.map((station) => [station.id, station.islandGroup]),
-    );
-    return stationUnits(stations.stations, islandGroups, stepId);
-  }, [stations, directory, stepId]);
-
-  const units = source === "provinces" ? provinceList : stationList;
-  const failed =
-    source === "provinces"
-      ? provinces.status === "error"
-      : stations.status === "error" || directory.status === "error";
+  const units = lists.units[source];
+  const failed = lists.failed[source];
   // Temperature is per station only, so the anomaly pill is not offered for
   // provinces. The choice is kept rather than reset, and comes back with the
   // stations tab.
   const metrics = METRICS_FOR[source];
   const shownMetric = metrics.includes(metric) ? metric : "pn";
   const noun = source === "provinces" ? "provinces" : "stations";
-  // Every row of an issuance carries the same `issuedAt`, so whichever
-  // resolution lands first can name it for both.
-  const issuedAt =
-    (provinces.status === "ready"
-      ? provinces.provinces.values().next().value?.issuedAt
-      : undefined) ??
-    (stations.status === "ready"
-      ? stations.stations.values().next().value?.issuedAt
-      : undefined);
+  const { issuedAt } = lists;
 
   // Nothing to summarise, so the error stands in for the whole panel body
   // rather than sitting under a header and tabs that lead nowhere.
   if (units === null && failed) {
     return (
-      <Empty className="gap-3 px-6 py-8">
-        <EmptyHeader>
-          <EmptyIcon>
-            <CloudOff />
-          </EmptyIcon>
-          <EmptyTitle className="text-[13px] text-fg-heading">
-            Overview unavailable
-          </EmptyTitle>
-          <EmptyDescription className="text-[12px] text-fg-body">
-            The forecast couldn't be reached. Try again in a moment.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      <Unavailable>
+        The forecast couldn't be reached. Try again in a moment.
+      </Unavailable>
     );
   }
 
   return (
     <>
       {/* The resolution tabs under the date at either width, never beside it. */}
-      <div className="flex flex-col gap-2.5 px-4 pt-3.5">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-baseline justify-between gap-3 text-[12px] font-medium text-fg-subtle">
-            <span className="tracking-[0.4px] uppercase">{productLabel}</span>
-            {issuedAt ? (
-              <span className="shrink-0 tabular-nums">
-                Issued {formatIssuedAt(issuedAt)}
-              </span>
-            ) : (
-              // Pending only while neither resolution has answered: one that
-              // answers with no rows has no issuance to name, and says so in
-              // the "No forecast published" notice below.
-              provinces.status !== "ready" &&
-              stations.status !== "ready" && (
-                <Skeleton className="h-2.5 w-24 self-center rounded-full bg-line" />
-              )
-            )}
-          </div>
-          {stepId ? (
-            <span
-              className={cn(
-                "font-semibold tracking-[-0.01em] text-fg-heading",
-                wide ? "text-2xl" : "text-xl",
-              )}
-            >
-              {formatStepId(stepId)}
-            </span>
-          ) : (
-            <Skeleton className="my-1.5 h-4 w-36 rounded-full bg-line" />
-          )}
-        </div>
+      <OverviewHeading
+        productLabel={productLabel}
+        issuedAt={issuedAt}
+        // Pending only while neither resolution has answered: one that
+        // answers with no rows has no issuance to name, and says so in the
+        // "No forecast published" notice below.
+        pending={!lists.answered}
+        stepId={stepId}
+        wide={wide}
+      >
         {/* Held back only until either resolution has something to show: once
             one has, the tabs are live, so a pending tab never hides the other. */}
-        {provinceList === null && stationList === null ? (
+        {lists.units.provinces === null && lists.units.stations === null ? (
           <Skeleton
             aria-hidden
             className="h-8 w-38 self-start rounded-lg bg-line"
@@ -318,7 +274,7 @@ function SeasonalOverview({
             </TabsList>
           </Tabs>
         )}
-      </div>
+      </OverviewHeading>
 
       {units === null ? (
         <OverviewSkeleton />
@@ -338,9 +294,10 @@ function SeasonalOverview({
             wide={wide}
             className={cn(wide && "border-r border-line")}
           >
-            <PercentOfNormal
-              classes={pnDistribution(units)}
+            <ClassBreakdown
+              classes={classCounts(units, PN_CLASSING)}
               noun={noun}
+              none="No percent-of-normal readings for this month."
               wide={wide}
             />
           </Section>
@@ -356,7 +313,7 @@ function SeasonalOverview({
             className={wide ? undefined : "gap-2.5"}
           >
             <IslandGroups
-              units={units}
+              islands={islandDistributions(units, PN_CLASSING)}
               wide={wide}
               sort={islandSort}
               resetKey={`${source}:${islandSort}`}
@@ -391,6 +348,174 @@ const RESOLUTION_TABS = [
   { id: "stations" as const, label: "Stations" },
 ];
 
+/**
+ * The drought summary for one month of the selected layer: how many provinces
+ * are in each status nationally, and the same split per island group.
+ *
+ * The seasonal summary's first two sections, counting statuses rather than
+ * percent-of-normal classes. Provinces only — drought publishes no stations —
+ * so there are no resolution tabs, and nothing to rank: a status is a class,
+ * not a figure to order places by. The island order outlives a month change,
+ * as the seasonal one does.
+ */
+function DroughtOverview({
+  choropleth,
+  productLabel,
+  stepId,
+  wide,
+}: {
+  choropleth: Choropleth;
+  productLabel: string;
+  stepId: string | null;
+  wide: boolean;
+}) {
+  const [islandSort, setIslandSort] = useState<IslandSort>("name");
+  const { variant, months } = choropleth;
+  const month = choroplethMonth(choropleth, stepId);
+  const classing = useMemo(() => droughtClassing(variant.classes), [variant]);
+  const units = useMemo(() => (month ? droughtUnits(month) : null), [month]);
+  const pending = months.status === "loading" || months.status === "idle";
+
+  if (months.status === "error") {
+    return (
+      <Unavailable>
+        The drought {variant.noun} couldn't be reached. Try again in a moment.
+      </Unavailable>
+    );
+  }
+
+  return (
+    <>
+      <OverviewHeading
+        productLabel={productLabel}
+        issuedAt={month?.issuedAt}
+        pending={pending}
+        stepId={stepId}
+        wide={wide}
+      />
+
+      {pending || stepId === null ? (
+        <OverviewSkeleton />
+      ) : !units?.length ? (
+        <Notice>No drought {variant.noun} published for this month.</Notice>
+      ) : (
+        <div
+          className={cn(
+            "grid",
+            wide
+              ? "mt-3.5 grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]"
+              : "grid-cols-1",
+          )}
+        >
+          {/* The last row has nothing under it to be ruled off from. */}
+          <Section
+            title={`Drought ${variant.noun}`}
+            wide={wide}
+            className={cn(wide && "border-r border-b-0 border-line")}
+          >
+            <ClassBreakdown
+              classes={classCounts(units, classing)}
+              noun="provinces"
+              none="No drought status for this month."
+              wide={wide}
+            />
+          </Section>
+          <Section
+            title="By island group"
+            // Only the expanded list names places, so only it has an order.
+            actions={
+              wide && (
+                <IslandSortToggle value={islandSort} onChange={setIslandSort} />
+              )
+            }
+            wide={wide}
+            className={cn("border-b-0", !wide && "gap-2.5")}
+          >
+            <IslandGroups
+              islands={islandDistributions(units, classing)}
+              wide={wide}
+              sort={islandSort}
+              resetKey={`${variant.series}:${islandSort}`}
+            />
+          </Section>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * The product, its issuance and the scrubbed month, over whatever the summary
+ * sets under them — the seasonal resolution tabs.
+ */
+function OverviewHeading({
+  productLabel,
+  issuedAt,
+  pending,
+  stepId,
+  wide,
+  children,
+}: {
+  productLabel: string;
+  issuedAt: string | undefined;
+  /** The issuance is still being asked for: a placeholder holds its place. */
+  pending: boolean;
+  stepId: string | null;
+  wide: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5 px-4 pt-3.5">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-baseline justify-between gap-3 text-[12px] font-medium text-fg-subtle">
+          <span className="tracking-[0.4px] uppercase">{productLabel}</span>
+          {issuedAt ? (
+            <span className="shrink-0 tabular-nums">
+              Issued {formatIssuedAt(issuedAt)}
+            </span>
+          ) : (
+            pending && (
+              <Skeleton className="h-2.5 w-24 self-center rounded-full bg-line" />
+            )
+          )}
+        </div>
+        {stepId ? (
+          <span
+            className={cn(
+              "font-semibold tracking-[-0.01em] text-fg-heading",
+              wide ? "text-2xl" : "text-xl",
+            )}
+          >
+            {formatStepId(stepId)}
+          </span>
+        ) : (
+          <Skeleton className="my-1.5 h-4 w-36 rounded-full bg-line" />
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** A summary whose data could not be reached, in place of the whole body. */
+function Unavailable({ children }: { children: ReactNode }) {
+  return (
+    <Empty className="gap-3 px-6 py-8">
+      <EmptyHeader>
+        <EmptyIcon>
+          <CloudOff />
+        </EmptyIcon>
+        <EmptyTitle className="text-[13px] text-fg-heading">
+          Overview unavailable
+        </EmptyTitle>
+        <EmptyDescription className="text-[12px] text-fg-body">
+          {children}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
 function Section({
   title,
   actions,
@@ -423,45 +548,27 @@ function Section({
 }
 
 /**
- * The month's units by percent-of-normal class: a donut with the largest class
- * pulled out and counted in the middle, and a legend of all four beside it.
+ * The month's units by class — percent of normal, or drought status: a donut
+ * with the largest class pulled out and counted in the middle, and a legend of
+ * all four beside it.
  */
-function PercentOfNormal({
+function ClassBreakdown({
   classes,
   noun,
+  none,
   wide,
 }: {
   classes: ClassCount[];
   noun: string;
+  /** Said in the chart's place when no unit is in any class. */
+  none: string;
   wide: boolean;
 }) {
   const total = classes.reduce((sum, each) => sum + each.count, 0);
-  // The first on a tie, which is the drier class — the scale's order.
-  const lead = classes.reduce((best, next) =>
-    next.count > best.count ? next : best,
-  );
-  // The slices morph to each new month or resolution rather than redrawing:
-  // the counts and the lead's reach tween together, so a class growing reads
-  // as its slice growing. On mount the ring sweeps round once instead.
-  const shape = useTween(
-    [
-      ...classes.map((each) => each.count),
-      ...classes.map((each) => (each === lead ? LEAD_RADIUS : RING_RADIUS)),
-    ],
-    { duration: 250, easing: easeStrongInOut },
-  );
-  const [sweep] = useTween([1], {
-    duration: 300,
-    easing: easeStrongOut,
-    initial: [0],
-  });
+  const lead = leadClass(classes);
 
   if (total === 0) {
-    return (
-      <p className="text-[12px] text-fg-body">
-        No percent-of-normal readings for this month.
-      </p>
-    );
+    return <p className="text-[12px] text-fg-body">{none}</p>;
   }
 
   return (
@@ -471,45 +578,21 @@ function PercentOfNormal({
         wide ? "flex-row" : "flex-col",
       )}
     >
-      <div
-        className={cn("relative shrink-0", wide ? "size-[200px]" : "size-48")}
+      <ClassDonut
+        classes={classes}
+        lead={lead}
+        label={`${lead.count} of ${total} ${noun} ${lead.phrase}`}
+        className={wide ? "size-[200px]" : "size-48"}
       >
-        <svg
-          viewBox="0 0 192 192"
-          role="img"
-          aria-label={`${lead.count} of ${total} ${noun} ${lead.label.toLowerCase()}`}
-          className="block size-full"
-        >
-          {donutSlices(
-            classes,
-            shape.slice(0, classes.length),
-            shape.slice(classes.length),
-            sweep,
-          ).map((slice) => (
-            <path
-              key={slice.label}
-              d={slice.d}
-              fill={slice.color}
-              // The panel's own colour, so the gaps between slices read as
-              // cuts rather than as a fifth colour.
-              stroke="var(--cis-panel-solid)"
-              strokeWidth={1}
-            >
-              <title>{`${slice.label}: ${slice.count}`}</title>
-            </path>
-          ))}
-        </svg>
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-          <span className="font-cis-mono text-[30px]/none font-semibold tracking-[-0.02em] text-fg-heading">
-            {lead.count}
-          </span>
-          <span className="max-w-24 text-center text-[11px]/[1.3] text-fg-body">
-            {noun}
-            <br />
-            {lead.label.toLowerCase()}
-          </span>
-        </div>
-      </div>
+        <span className="font-cis-mono text-[30px]/none font-semibold tracking-[-0.02em] text-fg-heading">
+          {lead.count}
+        </span>
+        <span className="mt-0.5 max-w-24 text-center text-[11px]/[1.3] text-fg-body">
+          {noun}
+          <br />
+          {lead.phrase}
+        </span>
+      </ClassDonut>
       <ul
         className={cn(
           "grid content-center self-stretch",
@@ -527,7 +610,12 @@ function PercentOfNormal({
             )}
           >
             <span
-              className="size-2 shrink-0 rounded-[2px]"
+              className={cn(
+                "size-2 shrink-0 rounded-[2px]",
+                // Drought's "Not affected" is published as white: edged, or
+                // the swatch is not there on a white panel.
+                isPale(each.color) && "ring-1 ring-fg-body ring-inset",
+              )}
               style={{ background: each.color }}
             />
             <span className="truncate text-[12px] text-fg-body">
@@ -543,63 +631,6 @@ function PercentOfNormal({
   );
 }
 
-/** The ring's outer edge, and the lead class's, which reaches further out. */
-const RING_RADIUS = 82;
-const LEAD_RADIUS = 92;
-const INNER_RADIUS = 58;
-
-/**
- * The donut's slices, clockwise from twelve o'clock in the scale's order, from
- * the tweened counts and outer radii (see PercentOfNormal). `sweep` is how
- * much of the turn is drawn, 0 to 1, for the entrance. A slice too thin to
- * clear the gaps either side of it — an empty class, or one shrinking away —
- * draws nothing.
- */
-function donutSlices(
-  classes: readonly ClassCount[],
-  counts: readonly number[],
-  radii: readonly number[],
-  sweep: number,
-) {
-  const total = counts.reduce((sum, count) => sum + count, 0);
-  if (total <= 0) return [];
-  const spans = counts.map((count) => (count / total) * Math.PI * 2 * sweep);
-  // A hairline of angle between slices, and none around a lone full circle,
-  // which would otherwise show a notch at the top.
-  const gap = counts.filter((count) => count > 0).length > 1 ? 0.025 : 0;
-  let start = 0;
-  return classes.flatMap((each, index) => {
-    // Shy of a full turn, so a single class is still an arc SVG can draw.
-    const span = spans[index] - 0.0001;
-    const from = start;
-    start += span;
-    if (span <= gap) return [];
-    return [
-      {
-        ...each,
-        d: arc(
-          from + gap / 2,
-          from + span - gap / 2,
-          INNER_RADIUS,
-          radii[index],
-        ),
-      },
-    ];
-  });
-}
-
-/** An annular sector between two angles (radians, clockwise from twelve). */
-function arc(from: number, to: number, inner: number, outer: number) {
-  const centre = 96;
-  const at = (radius: number, angle: number) =>
-    `${(centre + radius * Math.sin(angle)).toFixed(2)} ${(centre - radius * Math.cos(angle)).toFixed(2)}`;
-  const large = to - from > Math.PI ? 1 : 0;
-  return (
-    `M${at(outer, from)}A${outer} ${outer} 0 ${large} 1 ${at(outer, to)}` +
-    `L${at(inner, to)}A${inner} ${inner} 0 ${large} 0 ${at(inner, from)}Z`
-  );
-}
-
 /**
  * The same classes per island group, as one stacked bar each.
  *
@@ -608,19 +639,21 @@ function arc(from: number, to: number, inner: number, outer: number) {
  * islandPages).
  */
 function IslandGroups({
-  units,
+  islands,
   wide,
   sort,
   resetKey,
 }: {
-  units: readonly OverviewUnit[];
+  islands: readonly IslandDistribution[];
   wide: boolean;
   /** The expanded list's order. */
   sort: IslandSort;
-  /** Back to the first page when this changes: the resolution or the order, not the month. */
+  /**
+   * Back to the first page when this changes: the resolution or drought
+   * layer, or the order — not the month.
+   */
   resetKey: string;
 }) {
-  const islands = islandDistributions(units);
   if (wide)
     return (
       <IslandGroupPages islands={islands} sort={sort} resetKey={resetKey} />
@@ -721,7 +754,14 @@ function IslandBar({
               // `flex-grow` is a layout property, and transitioned here anyway:
               // a stacked bar's segments have no transform equivalent that
               // leaves their counts undistorted, and there are twelve of them.
-              className="flex min-w-0 basis-0 items-center justify-center overflow-hidden font-cis-mono text-[11px] font-semibold transition-[flex-grow] duration-250 ease-strong-in-out motion-reduce:transition-none"
+              className={cn(
+                "flex min-w-0 basis-0 items-center justify-center overflow-hidden font-cis-mono text-[11px] font-semibold transition-[flex-grow] duration-250 ease-strong-in-out motion-reduce:transition-none",
+                // Drought's "Not affected" is published as white: edged, or
+                // the segment is not there on a white panel. The bar's own
+                // rounding on its end segments, so the edge follows it.
+                "first:rounded-l last:rounded-r",
+                isPale(each.color) && "ring-1 ring-line-strong ring-inset",
+              )}
               style={{
                 flexGrow: each.count,
                 background: each.color,
@@ -750,7 +790,7 @@ function IslandGroupPages({
   sort,
   resetKey,
 }: {
-  islands: ReturnType<typeof islandDistributions>;
+  islands: readonly IslandDistribution[];
   sort: IslandSort;
   resetKey: string;
 }) {
@@ -1000,7 +1040,8 @@ function TercileCard({
             {name}
           </PopoverTitle>
           <PopoverDescription className="text-[12px] text-fg-subtle">
-            {count} {count === 1 ? "station" : "stations"}, surest first
+            {count} {count === 1 ? "station" : "stations"}, high probability
+            first
           </PopoverDescription>
         </PopoverHeader>
         <ScrollArea className="-mr-2 *:data-[slot=scroll-area-viewport]:max-h-[min(24rem,60vh)] *:data-[slot=scroll-area-viewport]:pr-2">

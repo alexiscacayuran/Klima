@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { TooltipContent } from "@/components/ui/tooltip";
+import { TooltipCard } from "@/components/ui/tooltip-card";
 import { TERCILE_TAGS, TERCILES } from "@/map/config/colorScales";
 import type {
+  Category,
   ColorScale,
   ScaleClass,
   SymbologyMode,
@@ -95,6 +97,15 @@ const evenGradient = (scale: ColorScale) => {
     .join(", ")})`;
 };
 
+/**
+ * The box every legend is drawn in. The collapsed side panel's width, so the
+ * legend and the panels above it share one column edge on the right of the map.
+ */
+const LEGEND_FRAME = cn(
+  "pointer-events-auto flex w-[360px] shrink-0 flex-col gap-1 p-2",
+  "rounded-panel border border-line bg-panel-strong font-cis shadow-float backdrop-blur-md",
+);
+
 /** One bar of a legend: the table it draws and what heads it. */
 export type LegendRow = {
   key: string;
@@ -155,16 +166,7 @@ export function MapLegend({
   );
 
   return (
-    <figure
-      aria-label={ariaLabel}
-      className={cn(
-        // The collapsed side panel's width, so the legend and the panels above
-        // it share one column edge on the right of the map.
-        "pointer-events-auto flex w-[360px] shrink-0 flex-col gap-1 p-2",
-        "rounded-panel border border-line bg-panel-strong font-cis shadow-float backdrop-blur-md",
-        className,
-      )}
-    >
+    <figure aria-label={ariaLabel} className={cn(LEGEND_FRAME, className)}>
       {rows.map((row) => {
         const cells = cellsFor(row.scale, mode);
         // The share of the grid this row fills. Only a stepped stack aligns
@@ -323,5 +325,99 @@ export function TercileLegend({ scales, className }: TercileLegendProps) {
       ariaLabel="Tercile probability legend (%)"
       className={className}
     />
+  );
+}
+
+type CategoryLegendProps = {
+  /** The classes, in the order the bar reads them. */
+  categories: readonly Category[];
+  /** Printed in the slot before the bar: the scale's name, "Status". */
+  label: string;
+  /** The whole legend, for a screen reader. */
+  ariaLabel: string;
+  className?: string;
+};
+
+/**
+ * The key to a classification that is named rather than measured — drought
+ * status: one bar, one cell per class, each cell printing the class's name.
+ *
+ * The same frame and single bar as ScaleLegend, so switching between a surface
+ * and a choropleth repaints the corner without moving it. What differs is
+ * everything that assumed a number: the slot before the bar names the scale
+ * rather than giving a unit, and sizes to that name rather than to MapLegend's
+ * fixed width; the cells print names rather than the value each range starts
+ * at; and the tooltip says what the class means rather than its bounds.
+ *
+ * Names in the sans rather than the mono the numeric cells use, because these
+ * are words. Cells are sized to their names, sharing what is left over
+ * equally, rather than equal-width: the names are not an axis, and equal cells
+ * beside the slot would be about 73px, short of "Dry condition" at this size.
+ * A name that still did not fit would truncate, and its tooltip and
+ * screen-reader text would carry it whole.
+ */
+export function CategoryLegend({
+  categories,
+  label,
+  ariaLabel,
+  className,
+}: CategoryLegendProps) {
+  const [handle] = useState(() =>
+    TooltipPrimitive.createHandle<Category>(),
+  );
+
+  return (
+    <figure aria-label={ariaLabel} className={cn(LEGEND_FRAME, className)}>
+      <div className="flex h-5 items-center gap-1.5">
+        {/* MapLegend's slot, set the same but as wide as the name needs:
+            "Status" is too long for the 32px that fits a unit. */}
+        <span className="min-w-8 shrink-0 text-center font-cis-mono text-[11px]/none font-medium text-fg-body">
+          {label}
+        </span>
+
+        <div className="relative h-full min-w-0 flex-1">
+          <ol className="flex size-full gap-px overflow-hidden rounded-full">
+            {categories.map((category) => (
+              <TooltipPrimitive.Trigger
+                key={category.label}
+                handle={handle}
+                payload={category}
+                render={<li />}
+                className="flex min-w-0 flex-auto cursor-default items-center justify-center overflow-hidden px-1 text-[10.5px]/none font-semibold whitespace-nowrap"
+                style={{
+                  backgroundColor: category.color,
+                  color: inkOn(category.color),
+                }}
+              >
+                <span className="truncate" aria-hidden>
+                  {category.label}
+                </span>
+                <span className="sr-only">
+                  {category.label}: {category.description}
+                </span>
+              </TooltipPrimitive.Trigger>
+            ))}
+          </ol>
+          {/* The bar's edge, as in MapLegend — needed more here than there: the
+              first class is published as pure white. */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-fg-heading/10 ring-inset"
+          />
+        </div>
+      </div>
+
+      <TooltipPrimitive.Root handle={handle}>
+        {({ payload }) =>
+          payload && (
+            <TooltipCard
+              className="font-cis"
+              title={payload.label}
+              description={payload.description}
+            />
+          )
+        }
+      </TooltipPrimitive.Root>
+    </figure>
   );
 }

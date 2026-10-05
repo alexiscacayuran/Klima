@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { LayoutList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSelection } from "@/map/state/useSelection";
 import { useSidePanels } from "@/map/state/useSidePanels";
 import { DetailPanel } from "./DetailPanel";
+import { OverviewLauncher } from "./OverviewLauncher";
 import { OverviewPanel } from "./OverviewPanel";
 
 export type PanelDockProps = {
@@ -25,7 +25,8 @@ export type PanelDockProps = {
  * The overview is up at startup. Closing either panel leaves the slot empty:
  * closing the detail panel does not bring the overview back, because it was
  * dismissed on the way in and reopening it would undo that on the user's
- * behalf. The button is how it comes back.
+ * behalf. The button is how it comes back, and it shows what the overview
+ * would say about the selected product (see OverviewLauncher).
  *
  * Right-aligned rather than absolutely positioned so the detail panel can
  * widen leftwards from the same right edge (see DetailPanel).
@@ -69,25 +70,11 @@ export function PanelDock({ className }: PanelDockProps) {
         className,
       )}
     >
-      <button
-        type="button"
-        aria-label="Open overview"
-        title="Overview"
+      <OverviewLauncher
+        covered={!closed}
         onClick={openOverview}
-        data-closed={!closed || undefined}
-        inert={!closed}
-        className={cn(
-          // The panel header's own 44px, so the button stands exactly where
-          // the header it replaces did.
-          "panel-launcher pointer-events-auto flex size-11 shrink-0 items-center justify-center [grid-area:1/1]",
-          "rounded-panel border border-line bg-panel text-fg-body shadow-panel backdrop-blur-md",
-          "cursor-pointer outline-none",
-          "hover:border-brand-medium hover:text-fg-heading",
-          "focus-visible:ring-3 focus-visible:ring-brand/50",
-        )}
-      >
-        <LayoutList aria-hidden className="size-[18px]" />
-      </button>
+        className="[grid-area:1/1]"
+      />
       {panel === "detail" ? (
         <DetailPanel className={PANEL_CLASS} closed={closed} />
       ) : panel === "overview" ? (

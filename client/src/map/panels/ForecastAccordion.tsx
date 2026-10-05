@@ -24,9 +24,34 @@ type Card = {
 
 export type ForecastAccordionProps<G extends Card> = {
   groups: readonly G[];
+  /**
+   * The rail product the groups' variables are listed under: whose icons the
+   * cards wear, and whose selected variable opens its card. Seasonal unless
+   * said otherwise.
+   */
+  productId?: string;
+  /**
+   * Every card open, with nothing to close it: a title in place of the
+   * toggle. For a card with no others beside it, which closing would only
+   * empty the tab of.
+   */
+  alwaysOpen?: boolean;
   /** A card's body: its variable as a table, or as charts. */
   children: (group: G) => ReactNode;
 };
+
+/** The rail's icon for a variable, so a card and its row match. */
+const iconFor = (productId: string, variableId: string) =>
+  findProduct(productId)?.variables?.find(
+    (variable) => variable.id === variableId,
+  )?.icon;
+
+/**
+ * A card's title, toggle or not: the variable's name and icon in its colour,
+ * on a 40px bar the table sits right under.
+ */
+const cardTitle =
+  "h-10 items-center justify-start gap-2 px-0 py-0 text-[13px] font-semibold text-(--variable)";
 
 /**
  * An issuance as one card per variable — Rainfall, Temperature — each a
@@ -44,25 +69,43 @@ export type ForecastAccordionProps<G extends Card> = {
  * Temperature on the rail is asking about temperature — but not when the
  * subject does, so a reader stepping from station to station keeps the cards
  * they opened.
+ *
+ * Unless `alwaysOpen`: drought's one card holds the assessment and the outlook
+ * together, and a card that is the whole tab has nothing to make room for.
  */
-/** The rail's icons for the seasonal variables, so a card and its row match. */
-const ICONS = new Map(
-  (findProduct(DEFAULT_PRODUCT_ID)?.variables ?? []).map((variable) => [
-    variable.id,
-    variable.icon,
-  ]),
-);
-
 export function ForecastAccordion<G extends Card>({
   groups,
+  productId = DEFAULT_PRODUCT_ID,
+  alwaysOpen = false,
   children,
 }: ForecastAccordionProps<G>) {
   const { variable } = useSelection();
   const selected = parseVariableKey(variable);
-  // The detail panel describes the seasonal issuance; a variable of another
-  // product says nothing about which of these cards is the relevant one.
-  const active =
-    selected?.productId === DEFAULT_PRODUCT_ID ? selected.variableId : null;
+  // A variable of another product says nothing about which of these cards is
+  // the relevant one.
+  const active = selected?.productId === productId ? selected.variableId : null;
+
+  if (alwaysOpen) {
+    return (
+      <div className="flex flex-col gap-1 border-t border-line px-2.5 pb-2.5">
+        {groups.map((group) => {
+          const Icon = iconFor(productId, group.variableId);
+          return (
+            <section
+              key={group.variableId}
+              style={{ "--variable": group.accent } as CSSProperties}
+            >
+              <h3 className={cn("flex", cardTitle)}>
+                {Icon && <Icon aria-hidden className="size-4 shrink-0" />}
+                {group.label}
+              </h3>
+              {children(group)}
+            </section>
+          );
+        })}
+      </div>
+    );
+  }
 
   // No selected variable among the groups — nothing to lead with, so none is
   // hidden.
@@ -78,24 +121,22 @@ export function ForecastAccordion<G extends Card>({
       className="gap-1 border-t border-line px-2.5 pb-2.5"
     >
       {groups.map((group) => {
-        const Icon = ICONS.get(group.variableId);
+        const Icon = iconFor(productId, group.variableId);
         return (
           <AccordionItem
             key={group.variableId}
             value={group.variableId}
             // One custom property, so the title and icon cannot drift apart;
-            // the classes below read it. The body's outline takes the same
-            // colour.
+            // the classes below read it.
             style={{ "--variable": group.accent } as CSSProperties}
-            // No fill or outline of its own: the body's outline is the only
-            // frame. Nor the base item's divider — the gap already separates
-            // the variables. Padded below, so each card closes with the same
+            // No fill or outline of its own, nor the base item's divider —
+            // the gap already separates the variables. Padded below, so each card closes with the same
             // space, the last one included.
             className="not-last:border-b-0"
           >
             <AccordionTrigger
               className={cn(
-                "h-10 items-center justify-start gap-2 px-0 py-0 text-[13px] font-semibold text-(--variable)",
+                cardTitle,
                 "hover:no-underline focus-visible:ring-brand/50",
               )}
             >

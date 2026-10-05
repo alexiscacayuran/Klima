@@ -1,7 +1,9 @@
-import { CloudRain, Thermometer } from "lucide-react";
+import { CloudRain, DropletOff, Thermometer } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { CisProductName } from "@/api/products";
 import type { AdminLevel } from "@/map/types/features";
+import { DROUGHT_TIMELINES } from "./timeline";
+import type { TimelineSpec } from "./timeline";
 
 /**
  * The PAGASA product catalogue the left rail lists.
@@ -29,13 +31,13 @@ import type { AdminLevel } from "@/map/types/features";
  * published product shape, and spelling them as a list keeps a fourth from
  * needing a fourth flag.
  *
- * No `choropleth` yet. Painting admin polygons from their own values — with no
- * raster behind them — is the drought product's shape, and drought is not wired
- * up; layers/index.ts already reserves the slot in LAYER_ORDER. Declaring the
- * value before anything reads it would be config that does nothing, which is
- * exactly what this registry avoids elsewhere.
+ * `choropleth` is the surface's counterpart for a product published per unit
+ * rather than gridded: the admin polygons filled from their own values, with
+ * no raster behind them. Drought is that shape — a status per province and
+ * nothing to interpolate between — and it takes the raster's place in the map,
+ * the legend and the timeline's thumbnails (see layers/ChoroplethOverlay).
  */
-export const OVERLAYS = ["raster", "boundaries", "stations"] as const;
+export const OVERLAYS = ["raster", "choropleth", "boundaries", "stations"] as const;
 export type Overlay = (typeof OVERLAYS)[number];
 
 /**
@@ -57,6 +59,17 @@ export type ProductLayer = {
   label: string;
   /** What this layer draws; see the note on ProductDefinition.overlays. */
   overlays?: readonly Overlay[];
+  /**
+   * How this layer's timeline runs from its product's `latestData`, when that
+   * is not the dataset's own window (config/timeline PRODUCT_TIMELINES).
+   *
+   * For a layer that maps one part of an issuance: the drought assessment and
+   * outlook are two endpoints over two runs of months, and scrubbing either
+   * through the other's months would step through a map with nothing on it.
+   * The anchor stays the product's, since CIS publishes `latestData` per
+   * dataset and not per endpoint.
+   */
+  timeline?: TimelineSpec;
 };
 
 export type ProductVariable = {
@@ -101,7 +114,8 @@ export type ProductDefinition = {
    * has loaded it — while the API knows four datasets by names that are also
    * the strings its auth middleware scopes a token on (docs/cis-api.md §2). The
    * overlap is partial and not one-to-one: "10-day Forecast" is not `fiveday`,
-   * and no rail entry corresponds to `drought` or `daily-monitoring` yet.
+   * `drought` is mapped under "El Niño / La Niña", and no rail entry corresponds
+   * to `daily-monitoring` yet.
    *
    * Absent means the rail shows the product but nothing fetches for it: no
    * dates on the timeline, no choropleth. That is the honest state for a
@@ -219,7 +233,42 @@ export const PRODUCTS: readonly ProductDefinition[] = [
       },
     ],
   },
-  { id: "enso", label: "El Niño / La Niña" },
+  {
+    id: "enso",
+    label: "El Niño / La Niña",
+    // `/drought/*` resolves a location to provinces and publishes one status
+    // per province per month (docs/cis-api.md §5).
+    spatialLevel: 2,
+    cisProduct: "drought",
+    variables: [
+      // Both layers paint the same statuses on the same provinces, and differ
+      // only in which months they cover — so the overlays are the variable's,
+      // and the windows are each layer's own.
+      //
+      // DropletOff, for missing rain: PAGASA classifies drought by how far
+      // rainfall has fallen below normal, not by heat, so a sun would suggest
+      // the wrong quantity. It also sits beside Rainfall's CloudRain as the
+      // same subject read the other way.
+      {
+        id: "drought",
+        label: "Drought",
+        icon: DropletOff,
+        overlays: ["choropleth", "boundaries"],
+        layers: [
+          {
+            id: "assessment",
+            label: "Assessment",
+            timeline: DROUGHT_TIMELINES.assessment,
+          },
+          {
+            id: "outlook",
+            label: "Outlook",
+            timeline: DROUGHT_TIMELINES.outlook,
+          },
+        ],
+      },
+    ],
+  },
   { id: "projections", label: "Climate Projections" },
   { id: "monitoring", label: "Climate Monitoring" },
   { id: "climatology", label: "Climatology" },
@@ -297,8 +346,23 @@ export const DEFAULT_OVERLAYS: readonly Overlay[] = ["boundaries"];
  * that case.
  */
 export function overlaysForVariable(key: string | null): readonly Overlay[] {
+  const { product, variable, layer } = resolveKey(key);
+  return (
+    layer?.overlays ??
+    variable?.overlays ??
+    product?.overlays ??
+    DEFAULT_OVERLAYS
+  );
+}
+
+/** The catalogue entries a `variableKey` names, each absent where it names none. */
+function resolveKey(key: string | null): {
+  product?: ProductDefinition;
+  variable?: ProductVariable;
+  layer?: ProductLayer;
+} {
   const parts = parseVariableKey(key);
-  if (!parts) return DEFAULT_OVERLAYS;
+  if (!parts) return {};
 
   const product = findProduct(parts.productId);
   const variable = product?.variables?.find(
@@ -307,14 +371,17 @@ export function overlaysForVariable(key: string | null): readonly Overlay[] {
   const layer = parts.layerId
     ? variable?.layers?.find((candidate) => candidate.id === parts.layerId)
     : undefined;
-
-  return (
-    layer?.overlays ??
-    variable?.overlays ??
-    product?.overlays ??
-    DEFAULT_OVERLAYS
-  );
+  return { product, variable, layer };
 }
+
+/**
+ * The window a selected layer declares for its timeline, if it declares one —
+ * absent, the timeline scrubs its dataset's whole window (config/timeline
+ * `timelineFor`).
+ */
+export const timelineSpecForVariable = (
+  key: string | null,
+): TimelineSpec | undefined => resolveKey(key).layer?.timeline;
 
 /** Whether a selected layer draws one particular overlay. */
 export const hasOverlay = (key: string | null, overlay: Overlay): boolean =>

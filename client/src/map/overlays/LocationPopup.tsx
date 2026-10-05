@@ -11,6 +11,12 @@ import {
   seasonalValue,
 } from "@/map/config/seasonalReadings";
 import { formatStepId } from "@/map/config/timeline";
+import {
+  choroplethCategory,
+  choroplethMonth,
+  useChoropleth,
+} from "@/map/hooks/useChoropleth";
+import type { Choropleth } from "@/map/hooks/useChoropleth";
 import { useProducts } from "@/map/hooks/useProducts";
 import { useSeasonalForecast } from "@/map/hooks/useSeasonalForecast";
 import type { SeasonalForecastState } from "@/map/hooks/useSeasonalForecast";
@@ -27,8 +33,14 @@ import { useSelection } from "@/map/state/useSelection";
  * placeholder makes.
  */
 type Reading = {
-  /** The number as printed, or an em dash. */
+  /** The number as printed — or the class's name, when `named` — or an em dash. */
   value: string;
+  /**
+   * The reading is a class's name rather than a number: a drought status.
+   * Set in the sans at a size a phrase fits the card at, since the mono figure
+   * style exists for digits replaced in place and "Not affected" is neither.
+   */
+  named?: boolean;
   /** The unit, set apart from the number. Absent when there is no number. */
   unit?: string;
   /**
@@ -137,6 +149,42 @@ function readingFor(
 }
 
 /**
+ * What to quote for a layer that fills its units with classes — drought — off
+ * the national fetch the map is painted from, so the card costs no request and
+ * cannot name a different status from the fill beside it.
+ *
+ * The same states as a seasonal reading, in the layer's own words: a month the
+ * series publishes nothing for, and a place a published month says nothing
+ * about, are different gaps and are named differently.
+ */
+function classReadingFor(
+  choropleth: Choropleth,
+  psgc: string,
+  date: string | null,
+  datesLoading: boolean,
+): Reading {
+  const { variant, months } = choropleth;
+  const noun = variant.noun[0].toUpperCase() + variant.noun.slice(1);
+
+  if (months.status === "loading" || (datesLoading && date === null)) {
+    return { value: NO_VALUE, label: `Drought ${variant.noun}…`, loading: true };
+  }
+  if (months.status === "error") {
+    return { value: NO_VALUE, label: `${noun} unavailable` };
+  }
+  if (months.status === "none" || !choroplethMonth(choropleth, date)) {
+    return { value: NO_VALUE, label: `No ${variant.noun} for this month` };
+  }
+
+  const category = choroplethCategory(choropleth, psgc, date);
+  if (!category) return { value: NO_VALUE, label: "No status for this place" };
+
+  // The published colour, not the painted one: a receding class is faded on
+  // the map so the others stand out, but the swatch is its key.
+  return { value: category.label, named: true, color: category.color };
+}
+
+/**
  * The marker and popup for the pinned place.
  *
  * The pin is made in interactions/useBoundaryFocus, which is also what makes
@@ -172,14 +220,18 @@ export function LocationPopup({
   // Above the early return, as hooks have to be. It keys on the pin itself, so
   // with none it fetches nothing and reports `idle`.
   const forecast = useSeasonalForecast();
+  const choropleth = useChoropleth();
   const datesLoading = useProducts().status === "loading";
-  const reading = readingFor(
-    variable,
-    forecast,
-    date,
-    symbologyModeFor(variable),
-    datesLoading,
-  );
+  const reading =
+    choropleth && pinned
+      ? classReadingFor(choropleth, pinned.psgc, date, datesLoading)
+      : readingFor(
+          variable,
+          forecast,
+          date,
+          symbologyModeFor(variable),
+          datesLoading,
+        );
 
   // No pin, nothing to point at. Unmounting rather than hiding is what keeps
   // MapLibre from holding a popup element over the canvas that swallows clicks.
@@ -368,7 +420,16 @@ export function LocationPopup({
                         backgroundColor: reading.color ?? "var(--cis-well)",
                       }}
                     />
-                    <span className="shrink-0 font-cis-mono text-[22px]/7 font-semibold tracking-tight text-fg-heading">
+                    <span
+                      className={cn(
+                        "shrink-0 font-semibold text-fg-heading",
+                        // A name sits on the figure's 28px line so the card
+                        // keeps its height, at a size a phrase fits.
+                        reading.named
+                          ? "text-[17px]/7"
+                          : "font-cis-mono text-[22px]/7 tracking-tight",
+                      )}
+                    >
                       {reading.value}
                       {reading.unit && (
                         <span className="ml-1 text-[12px] font-medium text-fg-subtle">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { StyleSpecification } from 'maplibre-gl'
-import { BASEMAPS, GROUND, styleAssets } from '@/map/config/styles'
+import { BASEMAPS, GROUND, LAND_COAT, styleAssets } from '@/map/config/styles'
+import { PLACE_INK } from '@/map/config/labelTiers'
 import type { BasemapId } from '@/map/config/styles'
 import {
   adoptBasemapLabels,
@@ -45,7 +46,10 @@ export function useBasemapStyle(id: BasemapId): StyleSpecification | undefined {
             // land, which is the one id the raster inserts against. It also
             // strips the `fill-pattern` that withMartinAssets would otherwise
             // leave pointing at a sprite sheet that no longer exists.
-            adoptBasemapLabels(composeGround(loaded, GROUND[id])),
+            adoptBasemapLabels(
+              composeGround(loaded, GROUND[id], LAND_COAT[id]),
+              PLACE_INK[id],
+            ),
             styleAssets(),
           ),
         ),

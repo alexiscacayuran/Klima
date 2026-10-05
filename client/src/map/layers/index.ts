@@ -33,6 +33,16 @@ export const LAYER_ORDER: string[] = [
   // beforeId rather than by mount order. See layers/RasterOverlay.
   LAYER_IDS.raster,
 
+  // The choropleth: each unit filled with its published class, at the
+  // product's own resolution. The raster's counterpart, and in the raster's
+  // slot for the raster's reasons — the land tier tints it, the sea mask cuts
+  // the lakes and the coast out of it, and every boundary fill and stroke draws
+  // over it. Placed by naming the land as its beforeId, like the raster; see
+  // layers/ChoroplethOverlay. The two never draw at once, so their order
+  // against each other is moot. Not hit-tested: the boundary fills over it
+  // already answer for the same polygons.
+  LAYER_IDS.choropleth,
+
   // The country, over the surface rather than under it. This is the one place
   // the order is load-bearing rather than conventional: the land is painted at
   // a tenth, so what it sits above is what it tints. Below the raster it would
@@ -44,9 +54,6 @@ export const LAYER_ORDER: string[] = [
 
   // --- ours, under the seam: beforeId={LAYER_IDS.labelAnchor} ---
 
-  // Choropleth fills belong here too. A choropleth of the product's own
-  // resolution paints on the child tier, which is the tier the API publishes
-  // at; anything aggregated up to the parent paints on the parent fill.
   LAYER_IDS.boundariesParentFill,
   LAYER_IDS.boundariesParentLine,
   // The revealed tier draws over its parent's stroke on purpose: it is the
@@ -92,13 +99,13 @@ export const LAYER_ORDER: string[] = [
 ]
 
 /**
- * A raster overlay the user can switch on.
+ * A data overlay the user can switch on — the surface, or the choropleth that
+ * stands in for it on a product published per unit.
  *
- * Empty for now by design — the app ships with the basemap and administrative
- * boundaries only. This type is the contract the first real overlay implements,
- * and the layer panel already renders whatever appears in RASTER_LAYERS, so
- * adding one is a matter of pushing a definition here plus the <Source> that
- * draws it.
+ * What seeds `visibleLayers` in MapSettings, which the overlay and the legend
+ * both read, so a switch that turns one off turns off its key with it. Nothing
+ * on screen offers the switch yet (see MapRoot); adding an overlay is a
+ * definition here plus the component that draws it.
  */
 export type RasterLayerDefinition = {
   /** Stable id; also the visibility key in map settings. */
@@ -117,6 +124,12 @@ export const RASTER_LAYERS: RasterLayerDefinition[] = [
     label: 'Forecast surface',
     description:
       'The interpolated field behind the provincial figures, as published.',
+    defaultVisible: true,
+  },
+  {
+    id: LAYER_IDS.choropleth,
+    label: 'Classified units',
+    description: 'Each province filled with the class it is published in.',
     defaultVisible: true,
   },
 ]

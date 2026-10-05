@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import type { OverviewSource } from '@/map/panels/overviewSummary'
 import { SidePanelsContext } from './sidePanelsContext'
 import { useSelection } from './useSelection'
 
@@ -8,10 +9,12 @@ import { useSelection } from './useSelection'
  * there is a subject for it.
  */
 export function SidePanelsProvider({ children }: { children: ReactNode }) {
-  const { pinned, station } = useSelection()
+  const { pinned, station, suspendedPin } = useSelection()
   const hasSubject = pinned !== null || station !== null
   const [productsOpen, setProductsOpen] = useState(true)
   const [overviewOpen, setOverviewOpen] = useState(true)
+  const [overviewSource, setOverviewSource] =
+    useState<OverviewSource>('provinces')
   const [wantsDetail, setWantsDetail] = useState(false)
   const [panelExpanded, setPanelExpanded] = useState(false)
   const [wasExpanded, setWasExpanded] = useState(panelExpanded)
@@ -23,12 +26,23 @@ export function SidePanelsProvider({ children }: { children: ReactNode }) {
   // station in one commit), so moving from one place straight to the next keeps
   // the panel open.
   //
+  // A pin put aside by a layer without boundaries has not gone, though: the
+  // panel shuts with it but the request stands, so selecting a layer that
+  // draws boundaries again brings the pin back with the panel it had. A popup
+  // it had instead comes back as a popup, the request having been dropped when
+  // the panel was closed. Anything that dismisses the panel meanwhile — the
+  // overview opened into the empty slot, a station picked and then let go —
+  // drops the request on its own terms.
+  //
   // Adjusted during render rather than in an effect, so the frame after the
   // subject goes never draws a panel that is about to close. The slot is
-  // empty after it, so the width goes too.
+  // empty after it, so the width goes too — also for a pin put aside, which
+  // comes back narrow rather than reaching over the rail it was picked from.
+  // Each guarded, since a request held over a suspension keeps this branch
+  // live across renders.
   if (!hasSubject && wantsDetail) {
-    setWantsDetail(false)
-    setPanelExpanded(false)
+    if (!suspendedPin) setWantsDetail(false)
+    if (panelExpanded) setPanelExpanded(false)
   }
 
   // The rail comes back whenever the slot stops being wide — the collapse
@@ -90,6 +104,8 @@ export function SidePanelsProvider({ children }: { children: ReactNode }) {
       overviewOpen,
       openOverview,
       closeOverview,
+      overviewSource,
+      setOverviewSource,
       detailOpen,
       showDetail,
       closeDetail,
@@ -103,6 +119,8 @@ export function SidePanelsProvider({ children }: { children: ReactNode }) {
       overviewOpen,
       openOverview,
       closeOverview,
+      overviewSource,
+      setOverviewSource,
       detailOpen,
       showDetail,
       closeDetail,

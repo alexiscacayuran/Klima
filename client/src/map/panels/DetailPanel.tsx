@@ -8,13 +8,20 @@ import {
   Maximize2,
   Minimize2,
   Table,
+  TableProperties,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { PsgcLocation } from "@/api/locations";
+import type { CisProductName } from "@/api/products";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { PROVINCE_GROUPS, STATION_GROUPS } from "@/map/config/detailRows";
+import { cisProductForVariable } from "@/map/config/products";
 import { formatIssuedAt } from "@/map/config/timeline";
+import { useDroughtDetail } from "@/map/hooks/useDroughtDetail";
+import type { DroughtDetailState } from "@/map/hooks/useDroughtDetail";
 import { useSeasonalForecast } from "@/map/hooks/useSeasonalForecast";
 import { usePlaceProfile } from "@/map/hooks/usePlaceProfile";
 import { useSeasonalStations } from "@/map/hooks/useSeasonalStations";
@@ -24,6 +31,7 @@ import { useSelection } from "@/map/state/useSelection";
 import { tierLabel } from "@/map/types/features";
 import type { AdminLocation } from "@/map/types/features";
 import { ProvinceCharts, StationCharts } from "./charts/ForecastCharts";
+import { DroughtTables } from "./DroughtTables";
 import { ForecastTables } from "./ForecastTable";
 import { PanelIconButton, SidePanel } from "./SidePanel";
 
@@ -50,37 +58,45 @@ export type DetailPanelProps = {
  * viewport, which is the width the station table needs to show a whole
  * issuance without scrolling.
  *
- * The header carries tabs in place of a title — Table, Chart, About — with
- * the subject's name above whichever is showing. The tab outlives a change of
- * subject: someone reading charts goes on reading charts from one station to
- * the next.
+ * The header carries tabs in place of a title, with the subject's name above
+ * whichever is showing. Which tabs depends on the selected layer's dataset
+ * (see DATA_TABS) — Table and Chart for seasonal, Detail for drought — and
+ * About is every one's. The tab outlives a change of subject: someone reading
+ * charts goes on reading charts from one station to the next.
  */
 export function DetailPanel({ className, closed }: DetailPanelProps) {
-  const { pinned, station } = useSelection();
+  const { pinned, station, variable } = useSelection();
   const { closeDetail, panelExpanded, togglePanelExpanded } = useSidePanels();
+  const tabs = tabsFor(variable);
+  // The reader's last pick, held even while a product without that tab is
+  // showing, so that coming back to one with it finds it again. Until then the
+  // product's first tab stands in, and a pick shared by both — About — stays.
+  const [picked, setPicked] = useState<DetailTab>("table");
+  const tab = tabs.includes(picked) ? picked : tabs[0];
 
   return (
     // `contents`: the root has to enclose both the tab list in the header and
     // the panels in the body, but the frame is what the dock lays out, so the
     // root must not become a box of its own around it.
-    <Tabs defaultValue="table" className="contents">
+    <Tabs
+      value={tab}
+      onValueChange={(value: DetailTab) => setPicked(value)}
+      className="contents"
+    >
       <SidePanel
         closed={closed}
         title="Detail"
         heading={
           <TabsList variant="line">
-            <TabsTrigger value="table">
-              <Table aria-hidden />
-              Table
-            </TabsTrigger>
-            <TabsTrigger value="chart">
-              <ChartLine aria-hidden />
-              Chart
-            </TabsTrigger>
-            <TabsTrigger value="about">
-              <Info aria-hidden />
-              About
-            </TabsTrigger>
+            {tabs.map((id) => {
+              const { label, icon: Icon } = TABS[id];
+              return (
+                <TabsTrigger key={id} value={id}>
+                  <Icon aria-hidden />
+                  {label}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
         }
         className={cn(
@@ -126,6 +142,41 @@ export function DetailPanel({ className, closed }: DetailPanelProps) {
   );
 }
 
+type DetailTab = "table" | "chart" | "detail" | "about";
+
+const TABS: Record<DetailTab, { label: string; icon: LucideIcon }> = {
+  table: { label: "Table", icon: Table },
+  chart: { label: "Chart", icon: ChartLine },
+  detail: { label: "Detail", icon: TableProperties },
+  about: { label: "About", icon: Info },
+};
+
+/**
+ * The tabs a dataset's issuance is read under, ahead of About.
+ *
+ * Keyed by the CIS dataset rather than the rail product, as the choropleths
+ * are (see config/choropleths): what the tabs can show is a question of the
+ * data's shape, not of which bulletin PAGASA lists it under.
+ *
+ * Seasonal publishes quantities, read as figures and as curves. Drought
+ * publishes a class per month, which has no curve to draw, and splits its
+ * months between an assessment and an outlook — one tab, with both. Anything
+ * else keeps seasonal's pair, which says plainly under each that there is no
+ * detail for the product yet.
+ */
+const DATA_TABS: Partial<Record<CisProductName, readonly DetailTab[]>> = {
+  drought: ["detail"],
+};
+const DEFAULT_DATA_TABS: readonly DetailTab[] = ["table", "chart"];
+
+const tabsFor = (variable: string | null): readonly DetailTab[] => {
+  const dataset = cisProductForVariable(variable);
+  return [
+    ...((dataset && DATA_TABS[dataset]) ?? DEFAULT_DATA_TABS),
+    "about",
+  ];
+};
+
 /**
  * A pinned place, off the same shared fetch the popup reads.
  *
@@ -137,10 +188,13 @@ export function DetailPanel({ className, closed }: DetailPanelProps) {
  * when the list lands.
  */
 function PlaceDetail({ place }: { place: AdminLocation }) {
+  // Each idle unless the selected layer is its dataset's, so only one asks.
   const forecast = useSeasonalForecast();
+  const drought = useDroughtDetail(place.psgc);
   const profile = usePlaceProfile(place.psgc);
   const geoLevel =
     profile.status === "ready" ? profile.data.place.geoLevel : null;
+  const region = profile.status === "ready" ? profile.data.region : null;
   const tier = tierLabel(geoLevel ? { ...place, geoLevel } : place);
   // Both data tabs say the same while there is no forecast to draw, each in
   // its own silhouette while one is on the way.
@@ -162,7 +216,11 @@ function PlaceDetail({ place }: { place: AdminLocation }) {
         eyebrow={tier}
         title={place.name}
         issuedAt={
-          forecast.status === "ready" ? forecast.province.issuedAt : null
+          forecast.status === "ready"
+            ? forecast.province.issuedAt
+            : drought.status === "ready"
+              ? drought.issuedAt
+              : null
         }
       />
       <TabsContent value="table">
@@ -184,11 +242,42 @@ function PlaceDetail({ place }: { place: AdminLocation }) {
           pending(<ChartSkeleton charts={2} />)
         )}
       </TabsContent>
+      <TabsContent value="detail">
+        <DroughtDetail drought={drought} region={region} />
+      </TabsContent>
       <TabsContent value="about">
         <PlaceFacts profile={profile} />
       </TabsContent>
     </>
   );
+}
+
+/**
+ * A place's drought status, as the assessment and outlook table, or what
+ * stands in for it.
+ */
+function DroughtDetail({
+  drought,
+  region,
+}: {
+  drought: DroughtDetailState;
+  region: PsgcLocation | null;
+}) {
+  switch (drought.status) {
+    case "ready":
+      return <DroughtTables tables={drought.tables} region={region} />;
+    case "loading":
+      // The card's title, then the table's halves' names, its months and
+      // its one row.
+      return <TableSkeleton rows={3} label="Loading drought status…" />;
+    case "error":
+      return <Notice>Drought status unavailable.</Notice>;
+    case "none":
+      return <Notice>No drought status for this place.</Notice>;
+    case "idle":
+      // Unreachable while the tab only shows under a drought layer.
+      return <Notice>No detail for this product yet.</Notice>;
+  }
 }
 
 /**
@@ -251,6 +340,12 @@ function StationDetail({ stationId }: { stationId: number }) {
         ) : (
           pending(<ChartSkeleton charts={3} />)
         )}
+      </TabsContent>
+      <TabsContent value="detail">
+        {/* A station kept from a seasonal layer: drought has no points. */}
+        <Notice>
+          Drought status is published per province. Select one on the map.
+        </Notice>
       </TabsContent>
       <TabsContent value="about">
         <StationFacts meta={meta} location={location} />
@@ -631,10 +726,16 @@ function Notice({ children }: { children: ReactNode }) {
  * The table's silhouette while its data is out: a header and one line per
  * row, so the panel is already the height it is about to be.
  */
-function TableSkeleton({ rows }: { rows: number }) {
+function TableSkeleton({
+  rows,
+  label = "Loading forecast…",
+}: {
+  rows: number;
+  label?: string;
+}) {
   return (
     <div role="status" className="border-t border-line">
-      <span className="sr-only">Loading forecast…</span>
+      <span className="sr-only">{label}</span>
       {Array.from({ length: rows + 1 }, (_, index) => (
         <div
           key={index}

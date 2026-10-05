@@ -1,3 +1,6 @@
+import type { VectorSourceSpecification } from 'maplibre-gl'
+import type { AdminLevel } from '@/map/types/features'
+
 /**
  * The Martin tile server contract.
  *
@@ -142,7 +145,34 @@ export const spriteUrl = (id = 'markers', { sdf = false } = {}) =>
  * source opts in. Left OFF because maplibre-gl 5.24 ships MLT in its runtime
  * style spec — `encoding: {mvt, mlt}` — but omits `encoding` from
  * VectorSourceSpecification in its bundled .d.ts, so enabling it costs a cast
- * (see sources/AdminBoundaries.tsx). Flip this and drop the cast once the
- * typings catch up.
+ * (see boundarySource below). Flip this and drop the cast once the typings
+ * catch up.
  */
 export const USE_MLT = false
+
+/**
+ * maplibre-gl 5.24 supports MLT at runtime — its style spec declares
+ * `encoding: {mvt, mlt}` with an `mvt` default — but the bundled .d.ts omits
+ * `encoding` from VectorSourceSpecification, so the prop cannot be spelled in
+ * TypeScript without this widening. Delete it, and the `as` below, once the
+ * typings include it.
+ */
+type VectorSourceWithEncoding = VectorSourceSpecification & {
+  encoding?: 'mvt' | 'mlt'
+}
+
+/**
+ * The administrative boundaries at one level, as a vector source.
+ *
+ * One definition for every source that reads them — the two tiers
+ * sources/AdminBoundaries draws and the units layers/ChoroplethOverlay fills —
+ * so the three cannot disagree about zoom range, encoding or attribution.
+ */
+export const boundarySource = (level: AdminLevel): VectorSourceWithEncoding => ({
+  type: 'vector',
+  tiles: [tileUrl(MARTIN_SOURCES.adminBoundaries, { level })],
+  minzoom: BOUNDARIES_ZOOM.minzoom,
+  maxzoom: BOUNDARIES_ZOOM.maxzoom,
+  attribution: 'Philippine Statistics Authority',
+  ...(USE_MLT ? { encoding: 'mlt' as const } : {}),
+})

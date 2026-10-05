@@ -1,7 +1,11 @@
 import { useRef, useState } from "react";
 import type { RefObject } from "react";
 import * as maplibregl from "maplibre-gl";
-import { Map, MapProvider } from "@vis.gl/react-maplibre";
+import {
+  AttributionControl,
+  Map,
+  MapProvider,
+} from "@vis.gl/react-maplibre";
 
 import { AppActions } from "./controls/AppActions";
 import { AppLogo } from "./controls/AppLogo";
@@ -14,10 +18,16 @@ import { LocationPopup } from "./overlays/LocationPopup";
 import { StationMarkers } from "./overlays/StationMarkers";
 import { PanelDock } from "./panels/PanelDock";
 import { ProductAccordion } from "./panels/ProductAccordion";
-import { ScaleLegend, TercileLegend } from "./panels/ScaleLegend";
+import {
+  CategoryLegend,
+  ScaleLegend,
+  TercileLegend,
+} from "./panels/ScaleLegend";
 import { AdminBoundaries } from "./sources/AdminBoundaries";
+import { ChoroplethOverlay } from "./layers/ChoroplethOverlay";
 import { RasterOverlay } from "./layers/RasterOverlay";
 import { useBasemapStyle } from "./hooks/useBasemapStyle";
+import { useChoropleth } from "./hooks/useChoropleth";
 import { useRasterVariant } from "./hooks/useRasterVariant";
 import { useSnapshotSource } from "./hooks/useSnapshotSource";
 import { useTimeline } from "./hooks/useTimeline";
@@ -73,6 +83,12 @@ import "maplibre-gl/dist/maplibre-gl.css";
  * style before the overlay can sit in front of it. Mounted earlier it would
  * find no such id and append to the top, burying every boundary and label under
  * the surface they are meant to be read over.
+ *
+ * ChoroplethOverlay is the same exception: its layer is added the first time a
+ * choropleth is selected, well after the boundaries, so it names the land layer
+ * as its beforeId rather than trusting its place in this list — the raster's
+ * slot, so the basemap's lakes and roads draw over the classes as they do over
+ * the surface.
  */
 function DataLayers() {
   return (
@@ -85,6 +101,9 @@ function DataLayers() {
         inside it, not here, so that distinction can be made.
       */}
       <AdminBoundaries />
+      {/* Under the land, like the raster: placed by its beforeId, not by
+          its position here. */}
+      <ChoroplethOverlay />
       <RasterOverlay />
     </>
   );
@@ -163,11 +182,19 @@ function MapScene({ chrome }: { chrome: RefObject<HTMLDivElement | null> }) {
         // than none — the opposite of what is being asked for, on every mousemove.
         // See the note on INTERACTIVE_LAYER_IDS in config/constants.
         interactiveLayerIds={interactiveLayerIds}
-        // MapControls mounts an AttributionControl explicitly; leaving the
-        // default on would render a second one.
+        // The control is mounted below instead, to set its options; leaving
+        // the default on as well would render a second one.
         attributionControl={false}
         style={{ width: "100%", height: "100%" }}
       >
+        {/* The credit line in the bottom-right corner, under the legend. Its
+            text is collected from the sources on screen, not written here: the
+            basemap's tiles credit OpenFreeMap, OpenMapTiles and OpenStreetMap,
+            and every boundary source credits the PSA (config/martin →
+            boundarySource). Never `compact`: that collapses to a 24px button
+            on a narrow map, and the legend sits over that corner. Styled in
+            index.css. */}
+        <AttributionControl position="bottom-right" compact={false} />
         <DataLayers />
         {/* Not in DataLayers: markers and popups are DOM over the canvas, not
             style layers, so they have no place in LAYER_ORDER. They do have to be
@@ -252,6 +279,13 @@ function MapChrome({ root }: { root: RefObject<HTMLDivElement | null> }) {
   const raster = useRasterVariant();
   const legend =
     raster && (visibleLayers[LAYER_IDS.raster] ?? true) ? raster : null;
+  // The choropleth's key on the same terms: the classes of the one on screen,
+  // resolved through the hook the overlay paints from.
+  const choropleth = useChoropleth();
+  const categorical =
+    choropleth && (visibleLayers[LAYER_IDS.choropleth] ?? true)
+      ? choropleth.variant
+      : null;
   // A layer with no surface at all — probabilistic rainfall, temperature — is
   // keyed by what colours its station pills instead. Not a fallback for a
   // raster switched off: that layer still has a surface, just a hidden one.
@@ -394,6 +428,12 @@ function MapChrome({ root }: { root: RefObject<HTMLDivElement | null> }) {
         <div className="flex min-w-[360px] flex-1 justify-end">
           {legend ? (
             <ScaleLegend scale={legend.scale} mode={legend.mode} />
+          ) : categorical ? (
+            <CategoryLegend
+              categories={categorical.classes}
+              label={categorical.unit}
+              ariaLabel="Drought status legend"
+            />
           ) : terciles ? (
             <TercileLegend scales={terciles.scales} />
           ) : (

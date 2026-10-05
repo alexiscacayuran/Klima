@@ -1,12 +1,11 @@
-import type { IslandGroup } from "@/map/config/islandGroups";
-import type { ClassMembers, OverviewUnit } from "./overviewSummary";
+import type { IslandDistribution, PlaceUnit } from "./overviewSummary";
 
 /**
  * The expanded "By island group" list, cut into pages that each fit a given
  * height.
  *
  * The list is every island group's bar, and under it the group's places,
- * each marked with its percent-of-normal class's colour. It is sized to its
+ * each marked with its class's colour. It is sized to its
  * neighbour — the percent-of-normal section beside it sets the row's height —
  * so rather than scroll inside a scrolling panel it is paged: as many lines
  * as the row has room for, then the next page. The line heights below are
@@ -31,16 +30,16 @@ export type IslandSort = "name" | "class";
 
 /** One place in the list, with the class its dot is painted in. */
 export type ListedUnit = {
-  unit: OverviewUnit;
+  unit: PlaceUnit;
   color: string;
   label: string;
 };
 
-export type PageIsland = {
-  group: IslandGroup;
-  /** The whole group's classes, for its bar, which is always drawn whole. */
-  classes: ClassMembers[];
-  total: number;
+/**
+ * One group on one page. Its classes are the whole group's, for its bar,
+ * which is always drawn whole.
+ */
+export type PageIsland = IslandDistribution & {
   /** The group's places on this page. */
   listed: ListedUnit[];
   /** Carried over from the page before. */
@@ -54,18 +53,14 @@ export type IslandPage = PageIsland[];
  *
  * Each group's places are one list, whatever their class: the dot says the
  * class, and the bar above says how the classes add up. `sort` orders it by
- * name, or by class in the scale's order — the bar's, driest first — and by
- * name within each.
+ * name, or by class in the scale's order — the bar's — and by name within
+ * each.
  *
  * Never fewer than one page. A capacity too small for a header and one line
  * is raised to that, so every page makes progress and the loop always ends.
  */
 export function paginateIslands(
-  islands: readonly {
-    group: IslandGroup;
-    classes: ClassMembers[];
-    total: number;
-  }[],
+  islands: readonly IslandDistribution[],
   capacity: number,
   sort: IslandSort,
 ): IslandPage[] {

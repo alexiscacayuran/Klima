@@ -44,14 +44,9 @@ export function ProvinceCharts({
     <ForecastAccordion groups={PROVINCE_GROUPS}>
       {(group) =>
         group.variableId === "rainfall" ? (
-          <RainfallCharts
-            rows={rainfall}
-            accent={group.accent}
-            currentDate={date}
-            subject="place"
-          />
+          <RainfallCharts rows={rainfall} currentDate={date} subject="place" />
         ) : (
-          <NotCharted accent={group.accent}>{group.label}</NotCharted>
+          <NotCharted>{group.label}</NotCharted>
         )
       }
     </ForecastAccordion>
@@ -78,19 +73,14 @@ export function StationCharts({
         group.variableId === "rainfall" ? (
           <RainfallCharts
             rows={rainfall}
-            accent={group.accent}
             currentDate={date}
             subject="station"
             terciles
           />
         ) : group.variableId === "temperature" ? (
-          <TemperatureCharts
-            rows={temperature}
-            accent={group.accent}
-            currentDate={date}
-          />
+          <TemperatureCharts rows={temperature} currentDate={date} />
         ) : (
-          <NotCharted accent={group.accent}>{group.label}</NotCharted>
+          <NotCharted>{group.label}</NotCharted>
         )
       }
     </ForecastAccordion>
@@ -98,8 +88,8 @@ export function StationCharts({
 }
 
 /**
- * The rainfall card's body: its charts stacked in one outline, each ruled off
- * from the next — the frame the table draws round its sections.
+ * The rainfall card's body: its charts stacked, each ruled off from the next
+ * as the table rules off its sections.
  *
  * All or nothing at the card: a station that reports no rainfall at all (NAIA
  * reports temperature only) gets one line saying so rather than three empty
@@ -107,13 +97,11 @@ export function StationCharts({
  */
 function RainfallCharts({
   rows,
-  accent,
   currentDate,
   subject,
   terciles = false,
 }: {
   rows: readonly RainfallChartMonth[];
-  accent: string;
   currentDate: string | null;
   subject: "place" | "station";
   /** The probabilistic forecast, which only stations publish. */
@@ -125,13 +113,13 @@ function RainfallCharts({
   );
 
   return (
-    <CardBody accent={accent}>
+    <CardBody>
       {!published ? (
         <EmptyPlot>No rainfall forecast for this {subject}.</EmptyPlot>
       ) : (
         <>
-          <RainfallForecastChart rows={rows} currentDate={currentDate} />
           <PercentOfNormalChart rows={rows} currentDate={currentDate} />
+          <RainfallForecastChart rows={rows} currentDate={currentDate} />
           {terciles && (
             <TercileProbabilityChart rows={rows} currentDate={currentDate} />
           )}
@@ -151,11 +139,9 @@ function RainfallCharts({
  */
 function TemperatureCharts({
   rows,
-  accent,
   currentDate,
 }: {
   rows: readonly TemperatureChartMonth[];
-  accent: string;
   currentDate: string | null;
 }) {
   const published = rows.some(
@@ -163,7 +149,7 @@ function TemperatureCharts({
   );
 
   return (
-    <CardBody accent={accent}>
+    <CardBody>
       {!published ? (
         <EmptyPlot>No temperature forecast for this station.</EmptyPlot>
       ) : (
@@ -178,37 +164,18 @@ function TemperatureCharts({
 }
 
 /** A variable whose charts are still to come. */
-function NotCharted({
-  accent,
-  children,
-}: {
-  accent: string;
-  children: ReactNode;
-}) {
+function NotCharted({ children }: { children: ReactNode }) {
   return (
-    <CardBody accent={accent}>
+    <CardBody>
       <EmptyPlot>{children} charts are not available yet.</EmptyPlot>
     </CardBody>
   );
 }
 
 /**
- * A card's outline, in its variable's colour, as the table's. Rounded and
- * clipping, so the rules between charts stop at the rounded corners.
+ * One parent for a card's charts, so the last one drops its rule (see
+ * ChartFrame).
  */
-function CardBody({
-  accent,
-  children,
-}: {
-  accent: string;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className="overflow-hidden rounded-md border"
-      style={{ borderColor: accent }}
-    >
-      {children}
-    </div>
-  );
+function CardBody({ children }: { children: ReactNode }) {
+  return <div>{children}</div>;
 }

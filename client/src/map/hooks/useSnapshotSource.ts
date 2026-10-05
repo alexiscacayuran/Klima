@@ -11,6 +11,8 @@ import {
   seasonalReadingFor,
   seasonalValue,
 } from '@/map/config/seasonalReadings'
+import { paintColor } from '@/map/config/choropleths'
+import { choroplethCategory, useChoropleth } from '@/map/hooks/useChoropleth'
 import { useIssuance } from '@/map/hooks/useIssuance'
 import { useRasterVariant } from '@/map/hooks/useRasterVariant'
 import { useSeasonalProvinces } from '@/map/hooks/useSeasonalProvinces'
@@ -26,8 +28,9 @@ import type { AdminLevel } from '@/map/types/features'
  *   settles on a dash for the other.
  * - **`choropleth`** — the layer's per-unit values, filled into the units at
  *   the product's own resolution. For a layer that publishes a field per unit
- *   but no surface behind it, which is the drought product's shape; no layer on
- *   the rail has it today, and a surface always wins where there is one, so the
+ *   but no surface behind it: the drought layers, whose classes are what the
+ *   map fills, and — should one ever draw no surface — a seasonal layer's
+ *   province readings. A surface always wins where there is one, so the
  *   thumbnail shows what the map shows.
  *
  * Null for a layer with neither — station-only layers like seasonal
@@ -82,12 +85,35 @@ export function useSnapshotSource(): SnapshotSource | null {
     [index, reading, mode],
   )
 
+  // The classes the map fills, read through the hook the overlay paints from.
+  // Painted as the overlay paints them, so a receding class recedes here too.
+  const classified = useChoropleth()
+  const categoryColorOf = useCallback(
+    (psgc: string, stepId: string) => {
+      const category = classified
+        ? choroplethCategory(classified, psgc, stepId)
+        : null
+      return category ? paintColor(category) : null
+    },
+    [classified],
+  )
+
   if (variant) {
     return {
       kind: 'raster',
       variant,
       issuedAt: issuance.status === 'ready' ? issuance.issuedAt : null,
       pending: issuance.status === 'loading' || issuance.status === 'idle',
+    }
+  }
+  if (classified) {
+    return {
+      kind: 'choropleth',
+      level: classified.level,
+      colorOf: categoryColorOf,
+      // Settled either way: a failed or empty fetch colours nothing, and a card
+      // with nothing coloured says so rather than shimmering for good.
+      ready: classified.months.status !== 'loading',
     }
   }
   if (choropleth) {

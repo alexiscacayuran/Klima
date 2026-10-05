@@ -1,5 +1,5 @@
 import { ApiError } from './client'
-import { REGION_PSGC } from './constants'
+import { ISLAND_GROUPS, REGION_PSGC } from './constants'
 
 /**
  * The shapes the API answers in, reconciled once.
@@ -39,16 +39,46 @@ import { REGION_PSGC } from './constants'
  * `withRetry`) rather than taken as a fault. Only 429: every other status is
  * still an answer.
  */
-export async function fetchAllRegions<T>(
+export function fetchAllRegions<T>(
   fn: (psgc: string, init?: RequestInit) => Promise<T[]>,
   init?: RequestInit,
 ): Promise<T[]> {
+  return fanOut(REGION_PSGC, fn, init)
+}
+
+/**
+ * The whole country in three requests rather than eighteen, for the one product
+ * that takes an island group as a location.
+ *
+ * Drought resolves `luzon`, `visayas` and `mindanao` to every province in their
+ * regions (docs/cis-api.md §3), so a national drought map costs a sixth of the
+ * region fan-out's share of the rate-limit bucket. The same 404 and 429 rules
+ * as above apply, because it is the same fan-out over a shorter list.
+ *
+ * Drought only. No other product documents island groups as a location, and one
+ * that fuzzy-matched "Luzon" to some single place would answer for that place
+ * alone and look like a thin country rather than an error.
+ */
+export function fetchAllIslandGroups<T>(
+  fn: (islandGroup: string, init?: RequestInit) => Promise<T[]>,
+  init?: RequestInit,
+): Promise<T[]> {
+  return fanOut(ISLAND_GROUPS, fn, init)
+}
+
+async function fanOut<T>(
+  locations: readonly string[],
+  fn: (location: string, init?: RequestInit) => Promise<T[]>,
+  init?: RequestInit,
+): Promise<T[]> {
   const responses = await Promise.all(
-    REGION_PSGC.map((psgc) =>
-      withRetry(() => paced(() => fn(psgc, init))).catch((error: unknown) => {
-        if (error instanceof ApiError && error.status === 404) return []
-        throw error
-      }),
+    locations.map((location) =>
+      withRetry(() => paced(() => fn(location, init))).catch(
+        (error: unknown) => {
+          if (error instanceof ApiError && error.status === 404) return []
+          throw error
+        },
+      ),
     ),
   )
   return responses.flat()

@@ -336,16 +336,6 @@
     color: var(--foreground);
     border-radius: calc(var(--radius-sm) / 2);
   }
-
-  .maplibregl-ctrl-attrib {
-    background: color-mix(in oklab, var(--background) 70%, transparent) !important;
-    color: var(--muted-foreground);
-    border-radius: var(--radius-sm);
-  }
-
-  .maplibregl-ctrl-attrib a {
-    color: var(--muted-foreground);
-  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -478,6 +468,37 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Attribution — the credit line MapRoot mounts in the bottom-right corner.
+
+   A flat strip flush to the corner, not a floating panel: it is the map's
+   small print, not chrome. It sits in the 24px the bottom row leaves under the
+   legend, which is why the line is 16px — one line clears the legend by 8px.
+
+   The fill is the panel's colour at well under the panel's opacity, so the map
+   still shows through as it does behind the reference's dark strip, and the
+   ink is the heading colour: white on near-black in Dark, and the same strip
+   turned over in Light. Links take that ink too, rather than MapLibre's fixed
+   75% black, which vanishes in Dark.
+
+   Unlayered, for the reason the popup's header gives. The selector is one class
+   above MapLibre's `.maplibregl-ctrl.maplibregl-ctrl-attrib` and its
+   per-corner margin rule, which is what wins the tie.
+   --------------------------------------------------------------------------- */
+.maplibregl-ctrl-bottom-right > .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  @apply font-cis;
+  margin: 0;
+  padding: 0 6px;
+  background: color-mix(in srgb, var(--cis-panel-solid) 60%, transparent);
+  color: var(--cis-fg-heading);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.maplibregl-ctrl.maplibregl-ctrl-attrib a {
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------------------
    Overview chart motion (map/panels/OverviewPanel).
 
    A bar's length is its inline `transform: scaleX()`, which transitions when
@@ -578,12 +599,26 @@
     opacity 150ms var(--ease-strong-out),
     visibility 150ms,
     color 150ms,
-    border-color 150ms;
+    border-color 150ms,
+    scale 200ms var(--ease-strong-out);
 }
 
 .panel-launcher[data-closed] {
   opacity: 0;
   visibility: hidden;
+}
+
+/* A launcher wearing a chart (map/panels/OverviewLauncher) swells a little
+   under the pointer, to meet it, and gives under a press. Hover only where
+   the pointer can hover: a tap would leave it swollen until the next one. */
+@media (hover: hover) and (pointer: fine) {
+  .panel-launcher[data-face="chart"]:hover {
+    scale: 1.08;
+  }
+}
+
+.panel-launcher[data-face="chart"]:active {
+  scale: 0.97;
 }
 
 /* Fewer and gentler: the panels still fade, since the fade says they came or
@@ -596,5 +631,54 @@
   }
   .side-panel[data-closed] {
     scale: none;
+  }
+  .panel-launcher[data-face="chart"]:is(:hover, :active) {
+    scale: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Product open and close (map/panels/ProductAccordion).
+
+   A product's panel unrolls under its row rather than appearing there, so the
+   rows below are pushed down, not teleported. Height is the one layout
+   property worth animating for this: there is no transform that makes room.
+   The panel is a one-row grid whose row runs from 0fr to 1fr, which reaches
+   the content's own height without measuring it, and the one child clips to
+   the row as it shrinks.
+
+   Closed works as the side panel's does: a mounted element, hidden by a
+   transitioned `visibility` once the fold ends and inert in the meantime, so
+   one product closing while another opens both play. Out is quicker than in,
+   for the same reason.
+   --------------------------------------------------------------------------- */
+.product-panel {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 200ms var(--ease-strong-out),
+    opacity 200ms var(--ease-strong-out),
+    visibility 200ms;
+}
+
+.product-panel > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.product-panel[data-closed] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition-duration: 150ms;
+}
+
+/* Fewer and gentler: the rows below take their new place at once, and an
+   opening panel still fades in, since the fade says it came. */
+@media (prefers-reduced-motion: reduce) {
+  .product-panel {
+    transition:
+      opacity 200ms ease,
+      visibility 200ms;
   }
 }

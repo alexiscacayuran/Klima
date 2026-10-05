@@ -63,6 +63,18 @@ export const SOURCE_IDS = {
    */
   boundaryLabelValues: 'boundary-label-values',
   /**
+   * The admin polygons again, at the product's own resolution, for the
+   * choropleth to fill.
+   *
+   * The same tiles as `boundariesChild` in a source of its own, so the
+   * choropleth does not depend on which tiers AdminBoundaries decides to mount:
+   * a level-1 product has no child tier at all, and removing a source out from
+   * under another component's layer is an error rather than a no-op. The cost
+   * is a second parse of tiles the browser already holds; Martin's ETag turns
+   * the second fetch into a 304.
+   */
+  choropleth: 'choropleth',
+  /**
    * Station points, clustered.
    *
    * GeoJSON rather than vector: there is no geometry in the CIS API and none in
@@ -111,6 +123,14 @@ export const LAYER_IDS = {
    * rather than a wash over the whole viewport.
    */
   sea: 'klima-sea',
+  /**
+   * Each unit filled with its published class — the surface's counterpart for
+   * a product published per unit. Drawn by layers/ChoroplethOverlay in the
+   * raster's slot, directly under the land, so the basemap's lakes, roads and
+   * coast, the edges and the selection all read over it exactly as they read
+   * over the raster.
+   */
+  choropleth: 'choropleth-fill',
   boundariesParentFill: 'boundaries-parent-fill',
   boundariesParentLine: 'boundaries-parent-line',
   boundariesChildFill: 'boundaries-child-fill',

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -15,6 +15,9 @@ import { formatStepId, formatStepMonth } from "@/map/config/timeline";
 import { useSelection } from "@/map/state/useSelection";
 import { inkOn } from "@/map/utils/ink";
 import { ForecastAccordion } from "./ForecastAccordion";
+import { useDragScroll } from "./useDragScroll";
+import { useScrollSync } from "./useScrollSync";
+import type { ScrollSync } from "./useScrollSync";
 
 const NO_VALUE = "—";
 
@@ -28,13 +31,31 @@ export type ForecastTableProps<M extends Month> = {
   /** The timeline's step, whose column is lit and kept in view. */
   currentDate: string | null;
   /**
+   * The column kept in view while the timeline's step is not one of these
+   * months, so the table still opens somewhere meaningful.
+   */
+  restingDate?: string | null;
+  /**
+   * Names for runs of months, in a row over the month header — for a table
+   * whose columns join series end to end. In order, each spanning as many
+   * columns as it names. Absent, there is no such row.
+   */
+  bands?: readonly Band[];
+  /** Column widths, for rows that are not figures (see LABEL_WIDTH). */
+  labelWidth?: number;
+  monthWidth?: number;
+  /** Each cell's padding either side, in px — less, for a tighter grid. */
+  cellPadding?: number;
+  /**
    * The horizontal position shared with the tables beside this one, so that
-   * several read as one grid that scrolls together (see useScrollSync).
+   * several read as one grid that scrolls together (see ScrollSync). Absent,
+   * the table keeps one of its own.
    */
   scrollSync?: ScrollSync;
-  /** The table's outline: its variable's colour (see DetailGroup). */
-  accent: string;
 };
+
+/** A run of adjacent months named as one, such as a series' window. */
+export type Band = { label: string; span: number };
 
 /**
  * Fixed rather than fitted to content, so that every table given the same
@@ -48,61 +69,7 @@ export type ForecastTableProps<M extends Month> = {
  */
 const LABEL_WIDTH = 136;
 const MONTH_WIDTH = 64;
-
-/**
- * One horizontal scroll position held by several viewports.
- *
- * `register` returns true when the viewport took on a position already set by
- * the others: that position is the reader's, and the table should not then
- * move it to show the current month.
- */
-export type ScrollSync = {
-  register: (viewport: HTMLElement) => {
-    adopted: boolean;
-    release: () => void;
-  };
-};
-
-/**
- * A ScrollSync for a group of tables. The position outlives the tables — a
- * card closed and reopened comes back where the rest are — but not the owner.
- */
-export function useScrollSync(): ScrollSync {
-  const [sync] = useState<ScrollSync>(() => {
-    const viewports = new Set<HTMLElement>();
-    let left: number | null = null;
-
-    return {
-      register(viewport) {
-        const adopted = left !== null;
-        if (left !== null) viewport.scrollLeft = left;
-
-        const onScroll = () => {
-          // Reading the viewport's position now rather than trusting the
-          // event: a follower's scroll event arrives after the leader has
-          // moved on, and echoing its stale position back would make a
-          // trackpad fling stutter.
-          if (viewport.scrollLeft === left) return;
-          left = viewport.scrollLeft;
-          for (const other of viewports) {
-            if (other !== viewport) other.scrollLeft = left;
-          }
-        };
-
-        viewports.add(viewport);
-        viewport.addEventListener("scroll", onScroll, { passive: true });
-        return {
-          adopted,
-          release: () => {
-            viewports.delete(viewport);
-            viewport.removeEventListener("scroll", onScroll);
-          },
-        };
-      },
-    };
-  });
-  return sync;
-}
+const CELL_PADDING = 12;
 
 /**
  * The Table tab: an issuance as one card per variable (see ForecastAccordion),
@@ -132,7 +99,6 @@ export function ForecastTables<M extends Month>({
           months={months}
           currentDate={date}
           scrollSync={scrollSync}
-          accent={group.accent}
         />
       )}
     </ForecastAccordion>
@@ -161,38 +127,53 @@ export function ForecastTables<M extends Month>({
  * under it and none between its rows, so a forecast, its range and its normal
  * read as one block and the next quantity as the next.
  *
- * Hovering a row paints each of its figures the colour it is on the map, so a
- * row reads as a strip of the legend: where the month turns wet, how far above
- * normal. The text over each fill takes whichever ink reads on it.
+ * The row a variable is read for (see DetailRow) is painted, each figure the
+ * colour it is on the map, so it reads as a strip of the legend: where the
+ * month turns wet, how far above normal. The text over each fill takes
+ * whichever ink reads on it.
  *
  * Scrolls sideways inside a ScrollArea rather than in the shadcn Table's own
  * `overflow-x-auto` container, which is made visible here: the themed bar is
  * the one the rest of the chrome uses, and the label column's `sticky` has to
- * resolve against the viewport, not an inner box that never scrolls.
+ * resolve against the viewport, not an inner box that never scrolls. It also
+ * scrolls by dragging with the mouse (see useDragScroll), glides on when
+ * flicked, and stretches and bounces back past either end (see ScrollSync).
  */
 export function ForecastTable<M extends Month>({
   sections,
   months,
   currentDate,
+  restingDate = null,
+  bands,
+  labelWidth = LABEL_WIDTH,
+  monthWidth = MONTH_WIDTH,
+  cellPadding = CELL_PADDING,
   scrollSync,
-  accent,
 }: ForecastTableProps<M>) {
   const table = useRef<HTMLTableElement>(null);
-  const currentHead = useRef<HTMLTableCellElement>(null);
+  const revealHead = useRef<HTMLTableCellElement>(null);
+  // The column kept in view: the lit one, or where the table rests without.
+  const revealDate = months.some((month) => month.date === currentDate)
+    ? currentDate
+    : restingDate;
   // Set when this table joined a group already scrolled somewhere, which is
   // then where it stays rather than jumping to the current month.
   const adopted = useRef(false);
+  const ownSync = useScrollSync();
+  const sync = scrollSync ?? ownSync;
 
   // Before the reveal below, which reads `adopted`: effects run in order.
   useLayoutEffect(() => {
     const viewport = table.current?.closest<HTMLElement>(
       "[data-slot=scroll-area-viewport]",
     );
-    if (!viewport || !scrollSync) return;
-    const joined = scrollSync.register(viewport);
+    if (!viewport) return;
+    const joined = sync.register(viewport);
     adopted.current = joined.adopted;
     return joined.release;
-  }, [scrollSync]);
+  }, [sync]);
+
+  useDragScroll(table, sync);
 
   // Scrolled by hand rather than with scrollIntoView: the label column is
   // sticky over the left edge, so "nearest" would happily park the column
@@ -204,7 +185,7 @@ export function ForecastTable<M extends Month>({
       adopted.current = false;
       return;
     }
-    const head = currentHead.current;
+    const head = revealHead.current;
     const viewport = head?.closest<HTMLElement>(
       "[data-slot=scroll-area-viewport]",
     );
@@ -215,7 +196,24 @@ export function ForecastTable<M extends Month>({
     const right = head.offsetLeft + head.offsetWidth - viewport.clientWidth;
     if (viewport.scrollLeft > left) viewport.scrollLeft = left;
     else if (viewport.scrollLeft < right) viewport.scrollLeft = right;
-  }, [currentDate, months]);
+  }, [revealDate, months]);
+
+  // Blank: the card's title already names the variable above. Opens the
+  // header's first row, and runs down through the months' when the bands sit
+  // over them, so the corner stays one block.
+  const corner = (
+    <TableHead
+      data-sticky-label
+      rowSpan={bands ? 2 : undefined}
+      className={cn(
+        stickyCell,
+        rule,
+        "h-9 bg-well text-[12px] font-semibold text-fg-body",
+      )}
+    >
+      <span className="sr-only">Parameter</span>
+    </TableHead>
+  );
 
   // Unpadded: the card's title bar is the table's heading and sits right on
   // it, and the table runs the card's full width, its edges in line with the
@@ -230,17 +228,25 @@ export function ForecastTable<M extends Month>({
       // over the figures.
       style={
         {
-          "--label-width": `${LABEL_WIDTH}px`,
-          borderColor: accent,
+          "--label-width": `${labelWidth}px`,
+          "--cell-x": `${cellPadding}px`,
         } as CSSProperties
       }
       className={cn(
         "[&_[data-slot=table-container]]:overflow-visible",
-        // Outlined and rounded on the root, which clips the viewport (it
-        // inherits the radius) and so the header band's corners with it.
-        "overflow-hidden rounded-md border",
+        // Rounded on the root, which clips the viewport (it inherits the
+        // radius) and so the header band's corners with it.
+        "overflow-hidden rounded-md",
         "data-has-overflow-x:pb-2.5",
         "[&>[data-slot=scroll-area-scrollbar]]:start-(--label-width)!",
+        // Draggable while there is somewhere to drag to (see useDragScroll).
+        "[&>[data-slot=scroll-area-viewport][data-has-overflow-x]]:cursor-grab",
+        "[&>[data-slot=scroll-area-viewport][data-has-overflow-x][data-dragging]]:cursor-grabbing",
+        // A swipe past an end stays here, rather than going back a page. With
+        // a mouse or trackpad the bounce is ScrollSync's own, so the browser's
+        // is turned off rather than doubled; a finger keeps the native one.
+        "[&>[data-slot=scroll-area-viewport]]:overscroll-x-contain",
+        "pointer-fine:[&>[data-slot=scroll-area-viewport]]:overscroll-x-none",
       )}
     >
       {/* `table-fixed`: the colgroup's widths are the columns', whatever the
@@ -248,34 +254,49 @@ export function ForecastTable<M extends Month>({
           grid, and then every table with these months stretches alike. */}
       <Table
         ref={table}
-        style={{ width: LABEL_WIDTH + months.length * MONTH_WIDTH }}
+        style={{ width: labelWidth + months.length * monthWidth }}
         className="min-w-full table-fixed border-separate border-spacing-0 font-cis text-[12px]"
       >
         <colgroup>
-          <col style={{ width: LABEL_WIDTH }} />
+          <col style={{ width: labelWidth }} />
           {months.map((month) => (
-            <col key={month.date} style={{ width: MONTH_WIDTH }} />
+            <col key={month.date} style={{ width: monthWidth }} />
           ))}
         </colgroup>
         <TableHeader className="[&_tr]:border-0">
+          {bands && (
+            <TableRow className="hover:bg-transparent">
+              {corner}
+              {bands.map((band, index) => (
+                <TableHead
+                  key={band.label}
+                  colSpan={band.span}
+                  className={cn(
+                    cellBase,
+                    rule,
+                    "h-8 bg-well text-[12px] font-semibold text-fg-body",
+                    // Where one run ends and the next begins.
+                    index > 0 && "border-l",
+                  )}
+                >
+                  {/* Pinned just past the label column while its run scrolls
+                      beneath, rather than centred over the run: a run is wider
+                      than the panel, and its middle is often out of view. */}
+                  <span className="sticky left-[calc(var(--label-width)+var(--cell-x))] inline-block">
+                    {band.label}
+                  </span>
+                </TableHead>
+              ))}
+            </TableRow>
+          )}
           <TableRow className="hover:bg-transparent">
-            <TableHead
-              data-sticky-label
-              className={cn(
-                stickyCell,
-                rule,
-                "h-9 bg-well text-[12px] font-semibold text-fg-body",
-              )}
-            >
-              {/* The card's title already names the variable above. */}
-              <span className="sr-only">Parameter</span>
-            </TableHead>
+            {!bands && corner}
             {months.map((month) => {
               const current = month.date === currentDate;
               return (
                 <TableHead
                   key={month.date}
-                  ref={current ? currentHead : undefined}
+                  ref={month.date === revealDate ? revealHead : undefined}
                   title={formatStepId(month.date)}
                   aria-current={current ? "date" : undefined}
                   className={cn(
@@ -299,13 +320,14 @@ export function ForecastTable<M extends Month>({
           // reordered.
           <TableBody key={index}>
             {section.map((row, rowIndex) => {
-              // Under a section's last row — except the table's last, where
-              // it would double the table's own border.
+              // Under a section's last row — except the table's last, which
+              // the card's own end closes.
               const ruled =
                 rowIndex === section.length - 1 && index < sections.length - 1;
               return (
                 <TableRow key={row.key} className="hover:bg-transparent">
                   <TableCell
+                    data-sticky-label
                     className={cn(
                       stickyCell,
                       ruled && rule,
@@ -334,15 +356,15 @@ export function ForecastTable<M extends Month>({
                         className={cn(
                           valueCell,
                           ruled && rule,
-                          "font-cis-mono",
+                          !row.named && "font-cis-mono",
                           current && currentColumn,
                           cell === null
                             ? "text-fg-subtle"
                             : current
                               ? "font-semibold text-fg-heading"
                               : "text-fg-body",
-                          cell?.fill && revealFill,
-                          cell?.ink && revealInk,
+                          cell?.fill && paintFill,
+                          cell?.ink && paintInk,
                           cell?.flush && "p-0",
                         )}
                       >
@@ -360,10 +382,10 @@ export function ForecastTable<M extends Month>({
   );
 }
 
-/** What a month's cell shows for a row, and how it colours on hover. */
+/** What a month's cell shows for a row, and the colour it is painted. */
 type Cell = {
   content: ReactNode;
-  /** The cell's fill while its row is hovered. */
+  /** The cell's fill, on a highlighted row. */
   fill?: string;
   /** The text over `fill`, where one ink serves the whole cell. */
   ink?: string;
@@ -403,8 +425,8 @@ function cellFor<M>(row: DetailRow<M>, month: M): Cell | null {
  * One figure of a stack, as a band across its cell.
  *
  * The cell gives up its padding and the figures tile it, every one padded
- * alike, so the bands are all one height: on hover each fills with its own
- * colour and takes the ink for it — two ends of a range, or three outcomes —
+ * alike, so the bands are all one height: a coloured figure fills its band
+ * edge to edge and takes the ink for it — the likeliest of three outcomes —
  * and none reads as the lesser for being in the middle.
  */
 function StackedFigure({ figure }: { figure: Figure }) {
@@ -419,8 +441,8 @@ function StackedFigure({ figure }: { figure: Figure }) {
           : undefined
       }
       className={cn(
-        "block px-3 py-1.5",
-        figure.fill && [revealFill, revealInk],
+        "block px-(--cell-x) py-1.5",
+        figure.fill && [paintFill, paintInk],
       )}
     >
       {figure.label && <span className="sr-only">{figure.label} </span>}
@@ -431,7 +453,7 @@ function StackedFigure({ figure }: { figure: Figure }) {
           aria-hidden
           className={cn(
             "ml-1 text-[10px] font-medium text-fg-subtle",
-            figure.fill && revealInk,
+            figure.fill && paintInk,
           )}
         >
           {figure.tag}
@@ -441,7 +463,7 @@ function StackedFigure({ figure }: { figure: Figure }) {
   );
 }
 
-const cellBase = "px-3 py-2";
+const cellBase = "px-(--cell-x) py-2";
 
 /**
  * Every cell draws its own bottom rule. The table is `border-separate` — a
@@ -452,48 +474,35 @@ const cellBase = "px-3 py-2";
 const rule = "border-b border-line";
 
 /**
- * The label column, pinned over the months as they scroll. Solid, not the
+ * The label column, pinned over the months as they scroll — and held back as
+ * they stretch past an end (see ScrollSync), so its cells carry
+ * `data-sticky-label`. Solid, not the
  * panel's translucent fill: the figures sliding beneath it ghosted through the
  * last few percent, and a backdrop blur to hide them paints as a square layer
  * that the table's rounded corners do not clip.
  */
 const stickyCell = cn(cellBase, "sticky left-0 z-10 bg-panel-solid text-left");
 
-const valueCell = cn(cellBase, "text-right tabular-nums");
+const valueCell = cn(cellBase, "text-center tabular-nums");
 
 /**
- * A row's colours, shown while it is hovered and read from each cell's own
- * `--fill` and `--ink`.
+ * A highlighted cell's colours, read from its own `--fill` and `--ink`.
  *
  * The fill is a layer of its own, laid over the cell's background and under
  * its text, rather than the background itself. So it covers the current
  * month's wash below instead of sitting under it — the wash would tint the
- * colour, and the ink was chosen against the colour untinted — and it fades by
- * opacity, which a background image cannot.
+ * colour, and the ink was chosen against the colour untinted.
  *
- * Faded in and out rather than switched, because a row of saturated colour
- * snapping on is a flash, and running the pointer down the table strobes. A
- * hover crossed tens of times a sitting, so short and plain: 150 ms, the
- * panel's duration, on `ease`, the curve for a colour change. The ink fades
- * with it. Colour only, nothing moves, so reduced motion keeps it.
- *
- * A bare `tr:hover` rather than Tailwind's `hover:` / `group-hover:`, which
- * only apply under `@media (hover: hover)` — and a touchscreen laptop can
- * report `hover: none` while a mouse is in hand, which left the row blank.
- * On a phone a tap then lights the row, which is no worse.
+ * The ink comes after the cell's own text colour in the class list, which
+ * `cn` resolves in its favour.
  */
-const revealFill = cn(
+const paintFill = cn(
   // A stacking context, so the layer's negative z-index puts it above the
   // cell's background rather than behind it.
   "relative isolate",
   "before:absolute before:inset-0 before:-z-10 before:bg-(--fill)",
-  "before:opacity-0 before:transition-opacity before:duration-150 before:ease-[ease]",
-  "[tr:hover_&]:before:opacity-100",
 );
-const revealInk = cn(
-  "transition-[color] duration-150 ease-[ease]",
-  "[tr:hover_&]:text-(--ink)",
-);
+const paintInk = "text-(--ink)";
 
 /**
  * The timeline's month, as a wash laid over a cell rather than a fill that

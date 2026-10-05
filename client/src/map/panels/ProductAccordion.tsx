@@ -175,9 +175,7 @@ function ProductsPanel({
                   // Inset: the row runs edge to edge, and the panel clips
                   // anything drawn outside it.
                   "focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:ring-inset",
-                  isOpen
-                    ? "border-b border-line font-semibold"
-                    : "font-medium hover:bg-line/40",
+                  isOpen ? "font-semibold" : "font-medium hover:bg-line/40",
                 )}
               >
                 {product.label}
@@ -191,21 +189,14 @@ function ProductsPanel({
                 />
               </button>
 
-              {/* Kept out of the tree when closed rather than hidden: the rail
-                is short, and an unmounted panel cannot be reached by tab order
-                or by a screen reader's virtual cursor. */}
-              {isOpen && (
-                <div id={panelId} role="region" aria-labelledby={headerId}>
-                  <ProductVariables
-                    product={product}
-                    selectedVariable={selectedVariable}
-                    onSelectVariable={onSelectVariable}
-                  />
-                  {product.controls?.length ? (
-                    <ProductControls controls={product.controls} />
-                  ) : null}
-                </div>
-              )}
+              <ProductPanel
+                product={product}
+                open={isOpen}
+                id={panelId}
+                labelledBy={headerId}
+                selectedVariable={selectedVariable}
+                onSelectVariable={onSelectVariable}
+              />
             </li>
           );
         })}
@@ -272,6 +263,67 @@ type SelectionProps = {
     layerId?: string,
   ) => void;
 };
+
+/**
+ * One product's layers and controls, under its row in the rail.
+ *
+ * Mounted whether or not the product is open, so closing can play: closed, it
+ * is folded to nothing and inert rather than gone, as the rail itself is (see
+ * `.product-panel` in index.css). Its contents are remounted each time it
+ * opens, though, so a variable group holding the selection comes back
+ * expanded, as it did when closing a product unmounted them.
+ *
+ * The hairline under the product's row is the top of this panel rather than
+ * the bottom of the row, so it folds away with the panel instead of vanishing
+ * the moment the row is pressed.
+ */
+function ProductPanel({
+  product,
+  open,
+  id,
+  labelledBy,
+  selectedVariable,
+  onSelectVariable,
+}: {
+  product: ProductDefinition;
+  open: boolean;
+  id: string;
+  labelledBy: string;
+} & SelectionProps) {
+  const [opens, setOpens] = useState(0);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setOpens(opens + 1);
+  }
+
+  return (
+    <div
+      id={id}
+      role="region"
+      aria-labelledby={labelledBy}
+      data-closed={!open || undefined}
+      inert={!open}
+      className="product-panel"
+    >
+      {/* The clipping row and the hairline are two boxes: a border is never
+        clipped by its own box, so on one it would hold a closed panel a
+        pixel open. */}
+      <div>
+        <div key={opens} className="border-t border-line">
+          <ProductVariables
+            product={product}
+            selectedVariable={selectedVariable}
+            onSelectVariable={onSelectVariable}
+          />
+          {product.controls?.length ? (
+            <ProductControls controls={product.controls} />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ProductVariables({
   product,

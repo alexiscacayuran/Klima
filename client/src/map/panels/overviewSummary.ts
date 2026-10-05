@@ -1,3 +1,4 @@
+import type { DroughtMonth, DroughtStatus } from "@/api/drought";
 import { seasonalMonth, seasonalStationMonth } from "@/api/seasonal";
 import { stationShortName } from "@/api/stations";
 import {
@@ -5,7 +6,7 @@ import {
   TEMPERATURE_ANOMALY_SCALE,
   TERCILES,
 } from "@/map/config/colorScales";
-import type { Tercile } from "@/map/config/colorScales";
+import type { Category, Tercile } from "@/map/config/colorScales";
 import { ISLAND_GROUPS, islandGroupOf } from "@/map/config/islandGroups";
 import type { IslandGroup } from "@/map/config/islandGroups";
 import {
@@ -17,24 +18,27 @@ import type { SeasonalProvinceIndex } from "@/map/hooks/useSeasonalProvinces";
 import type { SeasonalStationIndex } from "@/map/hooks/useSeasonalStations";
 
 /**
- * The overview's arithmetic: one month of the seasonal issuance, nationally,
+ * The overview's arithmetic: one month of the selected product, nationally,
  * counted and ranked.
  *
  * Apart from the panel so the panel stays a renderer, and because every figure
  * on it is a count of something the map already paints. The classes are the
- * percent-of-normal layer's own (config/colorScales), so "near normal" on the
- * donut is the same band the choropleth paints green; nothing here invents a
- * category the legend does not show.
+ * layer's own — percent of normal's breaks (config/colorScales), drought's
+ * published statuses (config/choropleths) — so "near normal" on the donut is
+ * the same band the choropleth paints green; nothing here invents a category
+ * the legend does not show.
  *
- * Provinces and stations reduce to one shape, OverviewUnit, so each section is
- * written once and reads whichever resolution the panel is showing.
+ * Every product's places reduce to one shape, PlaceUnit, and a Classing says
+ * which class each is in, so the class sections are written once and count
+ * whichever product the panel is showing. Seasonal provinces and stations
+ * carry more (OverviewUnit), for the sections only the seasonal forecast has.
  */
 
 /** The two resolutions CIS publishes the seasonal forecast at. */
 export type OverviewSource = "provinces" | "stations";
 
-/** One province or station, reduced to what the overview counts. */
-export type OverviewUnit = {
+/** What every unit the overview counts has, whatever the product. */
+export type PlaceUnit = {
   key: string;
   /** As listed — a station by its own name, without its municipality. */
   name: string;
@@ -42,6 +46,10 @@ export type OverviewUnit = {
   title: string;
   /** Null for a code the island table does not know; left out of the groups. */
   island: IslandGroup | null;
+};
+
+/** One seasonal province or station, reduced to what the overview counts. */
+export type OverviewUnit = PlaceUnit & {
   /** Percent of normal, where 100 is normal. */
   pn: number | null;
   /** The forecast total, in mm. */
@@ -113,14 +121,50 @@ export function stationUnits(
   return units;
 }
 
-/** How many units fall in one percent-of-normal class. */
-export type ClassCount = {
+/** One class of what the overview counts, as its charts and legends draw it. */
+export type OverviewClass = {
   label: string;
+  /** The label's abbreviation, where the scale publishes one (see ScaleBreak `tag`). */
+  tag?: string;
+  /**
+   * The class as it reads after a count of places — "below normal", "under
+   * drought" — for the donut's hole and its accessible name.
+   */
+  phrase: string;
   color: string;
-  count: number;
+};
+
+/** How many units fall in one class. */
+export type ClassCount = OverviewClass & { count: number };
+
+/**
+ * Which class each of a product's units is in: the classes in legend order,
+ * and the index of a unit's among them — or -1 for a unit with no reading,
+ * which is in no class.
+ */
+export type Classing<U> = {
+  classes: readonly OverviewClass[];
+  classOf: (unit: U) => number;
 };
 
 const PN_SCALE = RAINFALL_PERCENT_OF_NORMAL_SCALE;
+
+/** Percent of normal's classes, driest first, as its legend reads. */
+export const PN_CLASSING: Classing<OverviewUnit> = {
+  classes: PN_SCALE.classes.map((cls) => {
+    const label = cls.label ?? cls.range;
+    return {
+      label,
+      tag: cls.tag,
+      phrase: label.toLowerCase(),
+      color: cls.color,
+    };
+  }),
+  classOf: (unit) =>
+    unit.pn === null
+      ? -1
+      : PN_SCALE.classes.indexOf(PN_SCALE.classAt(unit.pn)),
+};
 
 /** A unit's percent-of-normal class name, or null when it has no reading. */
 export function pnClassLabel(pn: number | null): string | null {
@@ -134,48 +178,60 @@ export const pnClassColor = (pn: number | null): string | null =>
   pn === null ? null : PN_SCALE.classAt(pn).color;
 
 /**
- * The units per percent-of-normal class, in the scale's order — driest first,
- * as the legend reads. Every class is listed, empty ones at zero, so the
- * legend beside the donut keeps its rows as the months change. A unit with no
- * reading is in no class.
+ * The units per class, in the classing's order. Every class is listed, empty
+ * ones at zero, so the legend beside the donut keeps its rows as the months
+ * change. A unit with no reading is in no class.
  */
-export function pnDistribution(units: readonly OverviewUnit[]): ClassCount[] {
-  const counts = PN_SCALE.classes.map((cls) => ({
-    label: cls.label ?? cls.range,
-    color: cls.color,
-    count: 0,
-  }));
+export function classCounts<U>(
+  units: readonly U[],
+  classing: Classing<U>,
+): ClassCount[] {
+  const counts = classing.classes.map((cls) => ({ ...cls, count: 0 }));
   for (const unit of units) {
-    if (unit.pn === null) continue;
-    const index = PN_SCALE.classes.indexOf(PN_SCALE.classAt(unit.pn));
+    const index = classing.classOf(unit);
     if (index >= 0) counts[index].count += 1;
   }
   return counts;
 }
 
-/** One percent-of-normal class and the units in it. */
+/**
+ * The class with the most units — the one a donut pulls out and counts. The
+ * first on a tie, which is the scale's order: the drier class for percent of
+ * normal, the milder status for drought.
+ */
+export function leadClass<T extends ClassCount>(classes: readonly T[]): T {
+  return classes.reduce((best, next) =>
+    next.count > best.count ? next : best,
+  );
+}
+
+/** One class and the units in it. */
 export type ClassMembers = ClassCount & {
   /** By name, as a reader looks one up. */
-  units: OverviewUnit[];
+  units: PlaceUnit[];
+};
+
+/** One island group's split, with the units behind every count. */
+export type IslandDistribution = {
+  group: IslandGroup;
+  classes: ClassMembers[];
+  total: number;
 };
 
 /**
  * The distribution within each island group, north to south, with the units
  * behind every count, so a class can be listed as well as measured.
  */
-export function islandDistributions(
-  units: readonly OverviewUnit[],
-): { group: IslandGroup; classes: ClassMembers[]; total: number }[] {
+export function islandDistributions<U extends PlaceUnit>(
+  units: readonly U[],
+  classing: Classing<U>,
+): IslandDistribution[] {
   return ISLAND_GROUPS.map((group) => {
     const members = units.filter((unit) => unit.island === group);
-    const classes = pnDistribution(members).map((each, index) => ({
+    const classes = classCounts(members, classing).map((each, index) => ({
       ...each,
       units: members
-        .filter(
-          (unit) =>
-            unit.pn !== null &&
-            PN_SCALE.classes.indexOf(PN_SCALE.classAt(unit.pn)) === index,
-        )
+        .filter((unit) => classing.classOf(unit) === index)
         .sort((a, b) => a.name.localeCompare(b.name)),
     }));
     return {
@@ -185,6 +241,54 @@ export function islandDistributions(
     };
   });
 }
+
+/** One province in one month of a drought series. */
+export type DroughtUnit = PlaceUnit & { status: DroughtStatus };
+
+/**
+ * Every province the month gives a status, placed in its island group by its
+ * code, as the seasonal provinces are. A province the month says nothing
+ * about is not a unit of it — which is a different fact from "Not affected",
+ * and is left out of the totals rather than counted as one.
+ */
+export function droughtUnits(month: DroughtMonth): DroughtUnit[] {
+  return Array.from(month.statuses, ([psgc, status]) => {
+    const name = month.names.get(psgc) ?? psgc;
+    return {
+      key: psgc,
+      name,
+      title: name,
+      island: islandGroupOf(psgc),
+      status,
+    };
+  });
+}
+
+/** How a count of provinces reads each status: "12 provinces under drought". */
+const DROUGHT_PHRASES: Record<DroughtStatus, string> = {
+  "Not affected": "not affected",
+  "Dry condition": "under dry condition",
+  "Dry spell": "under dry spell",
+  Drought: "under drought",
+};
+
+/**
+ * Drought's classes, from the layer's own (ChoroplethVariant `classes`),
+ * mildest first as its legend reads. The published colours rather than the
+ * painted ones: the overview's swatches are keys, as the legend's are. "Not
+ * affected" is published as white, so every mark drawn in it is edged (see
+ * isPale).
+ */
+export const droughtClassing = (
+  classes: readonly Category<DroughtStatus>[],
+): Classing<DroughtUnit> => ({
+  classes: classes.map(({ label, color }) => ({
+    label,
+    phrase: DROUGHT_PHRASES[label],
+    color,
+  })),
+  classOf: (unit) => classes.findIndex((cls) => cls.label === unit.status),
+});
 
 /**
  * How many stations have each outcome as their likeliest, above first, and

@@ -3,16 +3,9 @@ import { Layer, Source } from "@vis.gl/react-maplibre";
 import type {
   Map as MapLibreMap,
   PropertyValueSpecification,
-  VectorSourceSpecification,
 } from "maplibre-gl";
 import { LAYER_IDS, SOURCE_IDS } from "@/map/config/constants";
-import {
-  BOUNDARIES_SOURCE_LAYER,
-  BOUNDARIES_ZOOM,
-  MARTIN_SOURCES,
-  USE_MLT,
-  tileUrl,
-} from "@/map/config/martin";
+import { BOUNDARIES_SOURCE_LAYER, boundarySource } from "@/map/config/martin";
 import { seasonalMonth } from "@/api/seasonal";
 import {
   cisProductForVariable,
@@ -47,25 +40,10 @@ import { NO_HOVER } from "@/map/state/selectionContext";
 import { useMapSettings } from "@/map/state/useMapSettings";
 import { useSelection } from "@/map/state/useSelection";
 import { boundaryLevels, enclosingParent } from "@/map/types/features";
-import type {
-  AdminLevel,
-  AdminLocation,
-  BoundaryLevels,
-} from "@/map/types/features";
+import type { AdminLocation, BoundaryLevels } from "@/map/types/features";
 import type { BoundaryHover } from "@/map/state/selectionContext";
 import { EMPTY_ANCHORS } from "@/map/utils/labelAnchors";
 import type { LabelAnchorCollection } from "@/map/utils/labelAnchors";
-
-/**
- * maplibre-gl 5.24 supports MLT at runtime — its style spec declares
- * `encoding: {mvt, mlt}` with an `mvt` default — but the bundled .d.ts omits
- * `encoding` from VectorSourceSpecification, so the prop cannot be spelled in
- * TypeScript without this widening. Delete it, and the `as` below, once the
- * typings include it.
- */
-type VectorSourceWithEncoding = VectorSourceSpecification & {
-  encoding?: "mvt" | "mlt";
-};
 
 /**
  * Boundary ink.
@@ -105,15 +83,6 @@ const BOUNDARY_INK = "#ffffff";
  * for the bands either side of it.
  */
 const BELOW_LABELS = LAYER_IDS.labelAnchor;
-
-const source = (level: AdminLevel): VectorSourceWithEncoding => ({
-  type: "vector",
-  tiles: [tileUrl(MARTIN_SOURCES.adminBoundaries, { level })],
-  minzoom: BOUNDARIES_ZOOM.minzoom,
-  maxzoom: BOUNDARIES_ZOOM.maxzoom,
-  attribution: "Philippine Statistics Authority",
-  ...(USE_MLT ? { encoding: "mlt" as const } : {}),
-});
 
 /**
  * Philippine administrative boundaries, served by Martin straight from PostGIS.
@@ -207,7 +176,7 @@ export function AdminBoundaries() {
 
   return (
     <>
-      <Source id={SOURCE_IDS.boundariesParent} {...source(levels.parent)}>
+      <Source id={SOURCE_IDS.boundariesParent} {...boundarySource(levels.parent)}>
         {/*
           Hit target, and the surface a choropleth of parent-level aggregates
           would eventually paint. Kept at 0.01 rather than 0: an all-but-invisible
@@ -285,7 +254,7 @@ export function AdminBoundaries() {
       </Source>
 
       {levels.child !== null && (
-        <Source id={SOURCE_IDS.boundariesChild} {...source(levels.child)}>
+        <Source id={SOURCE_IDS.boundariesChild} {...boundarySource(levels.child)}>
           {/*
             Unfiltered, unlike the outline beside it: this is the surface a
             click hits, so it has to exist for provinces the map is not
@@ -733,12 +702,18 @@ const clearFeatureState = (map: MapLibreMap, sourceId: string) => {
  * not publish that place. Better an empty readout than a stale one that a fetch
  * would then key on.
  *
+ * A pin already at the new resolution stays. The levels can change under one
+ * that has just been given back — put aside by a stations-only layer in a
+ * product of another resolution, and returned by a layer at its own (see
+ * MapSelection `suspendedPin`) — and that pin is a place the new product does
+ * publish.
+ *
  * Runs on change only, not on mount: clearing state that was never set is
  * harmless but the guard keeps the intent legible.
  */
 function useResetOnLevelChange(levels: BoundaryLevels) {
   const map = useRawMap();
-  const { setHover, setPinned } = useSelection();
+  const { setHover, pinned, setPinned } = useSelection();
   const previous = useRef(levels);
 
   useEffect(() => {
@@ -749,6 +724,9 @@ function useResetOnLevelChange(levels: BoundaryLevels) {
     clearFeatureState(map, SOURCE_IDS.boundariesParent);
     clearFeatureState(map, SOURCE_IDS.boundariesChild);
     setHover(NO_HOVER);
-    setPinned(null);
-  }, [map, levels, setHover, setPinned]);
+    // The product's own tier: the child when there is one, as in the probe.
+    if (pinned && pinned.level !== (levels.child ?? levels.parent)) {
+      setPinned(null);
+    }
+  }, [map, levels, pinned, setHover, setPinned]);
 }

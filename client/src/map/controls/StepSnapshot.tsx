@@ -90,6 +90,16 @@ export function StepSnapshot({ source, stepId, selected }: StepSnapshotProps) {
   // A choropleth is its units, filled — polygons because that is what the
   // field is published as, but with no stroke, so they read as one surface
   // rather than as boundaries.
+  const filled = units.shapes.units.flatMap((unit) => {
+    const color = source.colorOf(unit.psgc, stepId);
+    return color ? [<path key={unit.psgc} d={unit.path} fill={color} />] : [];
+  });
+
+  // Not one unit coloured: a month the product published nothing for, like a
+  // month with no drought assessment. The dash, as for a raster with no image,
+  // rather than an empty card that reads as one still loading.
+  if (filled.length === 0) return <NoSnapshot />;
+
   return (
     <svg
       viewBox={SNAPSHOT_VIEWBOX}
@@ -97,10 +107,7 @@ export function StepSnapshot({ source, stepId, selected }: StepSnapshotProps) {
       aria-hidden
       focusable={false}
     >
-      {units.shapes.units.map((unit) => {
-        const color = source.colorOf(unit.psgc, stepId);
-        return color ? <path key={unit.psgc} d={unit.path} fill={color} /> : null;
-      })}
+      {filled}
     </svg>
   );
 }
@@ -110,9 +117,9 @@ function Pending() {
 }
 
 /**
- * A step with nothing to show: CIS published no image for the month, the
- * issuance did not resolve, or the load failed. A dash rather than a blank, so
- * it does not read as a card still loading.
+ * A step with nothing to show: CIS published no image or no units for the
+ * month, the issuance did not resolve, or the load failed. A dash rather than a
+ * blank, so it does not read as a card still loading.
  */
 function NoSnapshot() {
   return (

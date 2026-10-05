@@ -1,4 +1,4 @@
-import type { CisProductName, ProductCatalogue } from '@/api/products'
+import type { CisProductName, ProductCatalogue } from "@/api/products";
 
 /**
  * The window of dates a product's timeline scrubs through, derived from the
@@ -11,29 +11,47 @@ import type { CisProductName, ProductCatalogue } from '@/api/products'
  * description of how far and which way the product's own window runs from it.
  *
  * The direction is per product and is deliberately not assumed — daily
- * monitoring runs backwards from its anchor, the forecasts run forwards, and a
+ * monitoring reaches back from its anchor, the forecasts reach forward, and a
  * product added later may do neither. See PRODUCT_TIMELINES.
+ *
+ * The direction decides *which dates* are in the window and nothing about their
+ * order. Every window is listed earliest first, so the scrubber reads left to
+ * right as time does and plays forward in time whatever the product.
  */
 
 /** The granularity a product's `date` parameter speaks (docs/cis-api.md §6). */
-export type TimelineUnit = 'month' | 'day'
+export type TimelineUnit = "month" | "day";
 
 export type TimelineSpec = {
-  unit: TimelineUnit
+  unit: TimelineUnit;
   /** How many steps the window holds, counting the anchor itself. */
-  count: number
+  count: number;
   /**
-   * Which way the window runs from `latestData` — and therefore the order the
-   * steps are listed, and the order the scrubber prints them in.
+   * Which side of `latestData` the window lies on — which dates it holds, not
+   * the order they are listed in, which is always earliest first.
    *
    * `forward` is a forecast: the anchor is the earliest date and the window
-   * looks ahead. `backward` is an observation record: the anchor is the most
-   * recent date and the window looks back, newest first, because the reading a
-   * user wants from a monitoring product is the latest one and it belongs at
-   * the start rather than at the end of the scrub.
+   * looks ahead, so it is the first step. `backward` is an observation record:
+   * the anchor is the most recent date and the window looks back, so it is the
+   * last step.
+   *
+   * Either way the anchor end is where the window opens (see `timelineFor`),
+   * because that is the reading the product leads with — the first forecast
+   * month, the latest observation — and the one CIS answers with when a request
+   * omits `date`.
    */
-  direction: 'forward' | 'backward'
-}
+  direction: "forward" | "backward";
+  /**
+   * How many units after the anchor the window's anchor end falls — zero, the
+   * anchor itself, when absent.
+   *
+   * For a window that is one part of an issuance and does not start where the
+   * issuance does. `latestData` is the earliest date of an issuance, and the
+   * drought outlook is the six months that *follow* it: the anchor is the
+   * assessment month, which the outlook endpoint does not publish.
+   */
+  offset?: number;
+};
 
 /**
  * One step on the scrubber.
@@ -43,21 +61,21 @@ export type TimelineSpec = {
  * monthly products, `YYYY-MM-DD` for the daily ones.
  */
 export type TimelineStep = {
-  id: string
+  id: string;
   /**
    * What the tick prints. Only the parts that *changed* since the previous
    * step, so a six-month window reads "Sep 2026 · Oct · Nov · Dec · Jan 2027 ·
    * Feb": the year is stated where it is in question and nowhere else, which is
    * the one place a bare "Jan" would be ambiguous.
    */
-  label: string
+  label: string;
   /**
    * The same date, always complete — "September 2026". The accessible name for
    * the tick, because the abbreviation above is only unambiguous next to its
    * neighbours and a screen reader arrives at one tick alone.
    */
-  fullLabel: string
-}
+  fullLabel: string;
+};
 
 /**
  * How each CIS product's window is shaped around its anchor.
@@ -71,17 +89,19 @@ export const PRODUCT_TIMELINES: Record<CisProductName, TimelineSpec> = {
    * Six months ahead, the anchor being the first of them. `latestData` is
    * `2026-09-01`; the issuance covers 2026-09 → 2027-02.
    */
-  seasonal: { unit: 'month', count: 6, direction: 'forward' },
+  seasonal: { unit: "month", count: 6, direction: "forward" },
 
   /**
    * Seven months, not six: one issuance publishes its **assessment** month —
    * which is what `latestData` points at — followed by six months of
-   * **outlook**. They come from two different endpoints (`/drought/assessment`
-   * and `/drought/outlook`) but they are one continuous run of months on a
-   * scrubber, so the first step here is the assessment and the rest are the
-   * outlook.
+   * **outlook**.
+   *
+   * The whole issuance, and a fallback only: the rail maps the two halves as
+   * separate layers, off separate endpoints, and each declares its own window
+   * (see DROUGHT_TIMELINES). A drought layer that declared none would scrub
+   * this.
    */
-  drought: { unit: 'month', count: 7, direction: 'forward' },
+  drought: { unit: "month", count: 7, direction: "forward" },
 
   /**
    * Five days from the issuance date.
@@ -99,12 +119,12 @@ export const PRODUCT_TIMELINES: Record<CisProductName, TimelineSpec> = {
    * is wired, replace this window with the issuance's own `data[].date` list —
    * that response states the span instead of implying it.
    */
-  fiveday: { unit: 'day', count: 5, direction: 'forward' },
+  fiveday: { unit: "day", count: 5, direction: "forward" },
 
   /**
-   * A week of observations ending at the newest one, newest first.
+   * A week of observations ending at the newest one.
    *
-   * The only product whose window runs backwards, because it is the only one
+   * The only product whose window reaches backwards, because it is the only one
    * that is not a forecast: an issuance carries exactly one observed day, so
    * there is nothing ahead of the anchor to scrub to. Seven matches the default
    * `period` on `/daily-monitoring/historical`, which is where the other six
@@ -115,8 +135,31 @@ export const PRODUCT_TIMELINES: Record<CisProductName, TimelineSpec> = {
    * at the time the docs were written, and that lag is exactly what `latestData`
    * reports so the app never has to probe for it.
    */
-  'daily-monitoring': { unit: 'day', count: 7, direction: 'backward' },
-}
+  "daily-monitoring": { unit: "day", count: 7, direction: "backward" },
+};
+
+/**
+ * The drought issuance split the way the rail splits it: one window per layer,
+ * each the months its own endpoint answers for.
+ *
+ * Declared on the layers themselves (config/products `ProductLayer.timeline`),
+ * because the two halves are different kinds of statement and scrub
+ * differently — which PRODUCT_TIMELINES, one window per dataset, cannot say.
+ */
+export const DROUGHT_TIMELINES = {
+  /**
+   * The six most recent assessments — `historical=true` on
+   * `/drought/assessment`. An observation record, so it reaches backwards like
+   * daily monitoring does: the anchor is the current assessment, which is the
+   * last step and the one the layer opens on.
+   *
+   * Derived from the anchor rather than from the months the response carries,
+   * so a month CIS holds no assessment for still has its step, and says so.
+   */
+  assessment: { unit: "month", count: 6, direction: "backward" },
+  /** The six outlook months after the assessment. */
+  outlook: { unit: "month", count: 6, direction: "forward", offset: 1 },
+} as const satisfies Record<string, TimelineSpec>;
 
 /**
  * Formatters, all pinned to `en-PH` and to UTC.
@@ -133,22 +176,26 @@ export const PRODUCT_TIMELINES: Record<CisProductName, TimelineSpec> = {
  * in docs/cis-api.md §6.
  */
 const format = (options: Intl.DateTimeFormatOptions) =>
-  new Intl.DateTimeFormat('en-PH', { ...options, timeZone: 'UTC' })
+  new Intl.DateTimeFormat("en-PH", { ...options, timeZone: "UTC" });
 
-const MONTH = format({ month: 'short' })
-const MONTH_YEAR = format({ month: 'short', year: 'numeric' })
-const MONTH_YEAR_LONG = format({ month: 'long', year: 'numeric' })
-const DAY = format({ day: 'numeric' })
-const DAY_MONTH = format({ month: 'short', day: 'numeric' })
-const DAY_MONTH_YEAR = format({ month: 'short', day: 'numeric', year: 'numeric' })
+const MONTH = format({ month: "short" });
+const MONTH_YEAR = format({ month: "short", year: "numeric" });
+const MONTH_YEAR_LONG = format({ month: "long", year: "numeric" });
+const DAY = format({ day: "numeric" });
+const DAY_MONTH = format({ month: "short", day: "numeric" });
+const DAY_MONTH_YEAR = format({
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
 const DAY_MONTH_YEAR_LONG = format({
-  month: 'long',
-  day: 'numeric',
-  year: 'numeric',
-})
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+});
 
 /** A calendar date with no time and no zone — what the API's date strings are. */
-type CalendarDate = { year: number; month: number; day: number }
+type CalendarDate = { year: number; month: number; day: number };
 
 /**
  * `YYYY-MM-DD` or `YYYY-MM` → its parts, or null if it is neither.
@@ -159,17 +206,17 @@ type CalendarDate = { year: number; month: number; day: number }
  * the caller gets one rule.
  */
 function parseCalendarDate(value: string): CalendarDate | null {
-  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value)
-  if (!match) return null
-  const [, year, month, day] = match
+  const match = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value);
+  if (!match) return null;
+  const [, year, month, day] = match;
   const parsed = {
     year: Number(year),
     month: Number(month),
     day: day ? Number(day) : 1,
-  }
-  if (parsed.month < 1 || parsed.month > 12) return null
-  if (parsed.day < 1 || parsed.day > 31) return null
-  return parsed
+  };
+  if (parsed.month < 1 || parsed.month > 12) return null;
+  if (parsed.day < 1 || parsed.day > 31) return null;
+  return parsed;
 }
 
 /**
@@ -180,15 +227,19 @@ function parseCalendarDate(value: string): CalendarDate | null {
  * six-month window that crosses a year boundary, or a week that crosses a month
  * boundary, need no arithmetic of its own.
  */
-function advance(anchor: CalendarDate, unit: TimelineUnit, delta: number): Date {
-  return unit === 'month'
+function advance(
+  anchor: CalendarDate,
+  unit: TimelineUnit,
+  delta: number,
+): Date {
+  return unit === "month"
     ? new Date(Date.UTC(anchor.year, anchor.month - 1 + delta, 1))
-    : new Date(Date.UTC(anchor.year, anchor.month - 1, anchor.day + delta))
+    : new Date(Date.UTC(anchor.year, anchor.month - 1, anchor.day + delta));
 }
 
 /** The id the product's own `date` parameter takes for this date. */
 const stepId = (date: Date, unit: TimelineUnit) =>
-  date.toISOString().slice(0, unit === 'month' ? 7 : 10)
+  date.toISOString().slice(0, unit === "month" ? 7 : 10);
 
 /**
  * The tick's label: this step's own unit, plus every coarser part that has
@@ -198,19 +249,21 @@ const stepId = (date: Date, unit: TimelineUnit) =>
  * year on the left end of the scrubber, where a reader looks for it.
  */
 function stepLabel(date: Date, unit: TimelineUnit, previous?: Date): string {
-  const newYear = !previous || date.getUTCFullYear() !== previous.getUTCFullYear()
-  const newMonth = newYear || date.getUTCMonth() !== previous.getUTCMonth()
+  const newYear =
+    !previous || date.getUTCFullYear() !== previous.getUTCFullYear();
+  const newMonth = newYear || date.getUTCMonth() !== previous.getUTCMonth();
 
-  if (unit === 'month') {
-    return (newYear ? MONTH_YEAR : MONTH).format(date)
+  if (unit === "month") {
+    return (newYear ? MONTH_YEAR : MONTH).format(date);
   }
-  if (newYear) return DAY_MONTH_YEAR.format(date)
-  if (newMonth) return DAY_MONTH.format(date)
-  return DAY.format(date)
+  if (newYear) return DAY_MONTH_YEAR.format(date);
+  if (newMonth) return DAY_MONTH.format(date);
+  return DAY.format(date);
 }
 
 /**
- * The steps a product's scrubber holds, given the catalogue's anchor for it.
+ * The steps a product's scrubber holds, given the catalogue's anchor for it —
+ * earliest first, whichever side of the anchor the window lies on.
  *
  * Empty when the product has no data loaded (`latestData: null`) or when the
  * anchor is not a date this build understands — an empty window is a state the
@@ -222,20 +275,25 @@ export function timelineSteps(
   spec: TimelineSpec,
   latestData: string | null | undefined,
 ): TimelineStep[] {
-  if (!latestData) return []
-  const anchor = parseCalendarDate(latestData)
-  if (!anchor) return []
+  if (!latestData) return [];
+  const anchor = parseCalendarDate(latestData);
+  if (!anchor) return [];
 
-  const step = spec.direction === 'forward' ? 1 : -1
+  // The earliest step, in units from the anchor: the anchor end itself for a
+  // window that looks ahead, and `count - 1` units before it for one that looks
+  // back. Counting up from there lists either kind in time order.
+  const anchorEnd = spec.offset ?? 0;
+  const earliest =
+    spec.direction === "forward" ? anchorEnd : anchorEnd - (spec.count - 1);
   const dates = Array.from({ length: spec.count }, (_, index) =>
-    advance(anchor, spec.unit, index * step),
-  )
+    advance(anchor, spec.unit, earliest + index),
+  );
 
   return dates.map((date, index) => ({
     id: stepId(date, spec.unit),
     label: stepLabel(date, spec.unit, dates[index - 1]),
     fullLabel: formatStepId(stepId(date, spec.unit)),
-  }))
+  }));
 }
 
 /**
@@ -250,12 +308,12 @@ export function timelineSteps(
  * as itself rather than as "Invalid Date".
  */
 export function formatStepId(id: string): string {
-  const parsed = parseCalendarDate(id)
-  if (!parsed) return id
-  const date = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day))
+  const parsed = parseCalendarDate(id);
+  if (!parsed) return id;
+  const date = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day));
   return id.length > 7
     ? DAY_MONTH_YEAR_LONG.format(date)
-    : MONTH_YEAR_LONG.format(date)
+    : MONTH_YEAR_LONG.format(date);
 }
 
 /**
@@ -266,28 +324,50 @@ export function formatStepId(id: string): string {
  * puts it on the first tick only. Anything else comes back untouched.
  */
 export function formatStepMonth(id: string): string {
-  const parsed = id.length === 7 ? parseCalendarDate(id) : null
-  if (!parsed) return id
-  return MONTH.format(new Date(Date.UTC(parsed.year, parsed.month - 1, 1)))
+  const parsed = id.length === 7 ? parseCalendarDate(id) : null;
+  if (!parsed) return id;
+  return MONTH.format(new Date(Date.UTC(parsed.year, parsed.month - 1, 1)));
 }
 
-const ISSUED = new Intl.DateTimeFormat('en-PH', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
+const ISSUED = new Intl.DateTimeFormat("en-PH", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
   // The issuance's own zone. `issuedAt` carries +08:00, so this is the date
   // PAGASA issued on, whatever zone the reader is in.
-  timeZone: 'Asia/Manila',
-})
+  timeZone: "Asia/Manila",
+});
 
 /** An issuance's `issuedAt` as a date: "2026-08-26T…+08:00" → "Aug 26, 2026". */
 export function formatIssuedAt(issuedAt: string): string {
-  return ISSUED.format(new Date(issuedAt))
+  return ISSUED.format(new Date(issuedAt));
 }
 
+/** A window, and where it opens. */
+export type Timeline = {
+  /** Earliest first. */
+  steps: TimelineStep[];
+  /**
+   * The step a selection lands on when it holds no date in this window: the
+   * anchor end — the first step of a window that looks ahead, the last of one
+   * that looks back (see TimelineSpec `direction`). Null for an empty window.
+   *
+   * Carried beside the steps rather than left to whoever reads them, because
+   * "the first step" stopped being the answer once every window was listed in
+   * time order, and the scrubber should not have to know which kind it holds.
+   */
+  initialStepId: string | null;
+};
+
+const EMPTY_TIMELINE: Timeline = { steps: [], initialStepId: null };
+
 /**
- * The window for a rail product, or an empty one when the map's current
+ * The window for a selected layer, or an empty one when the map's current
  * selection has no CIS dataset behind it.
+ *
+ * The anchor is always the product's — `latestData` is published per dataset —
+ * but the shape can be the layer's own (config/products
+ * `timelineSpecForVariable`); absent, it is the dataset's.
  *
  * Two separate reasons for an empty window, deliberately collapsed into one
  * result: the rail lists PAGASA bulletins CIS has not loaded yet (S2S, farm
@@ -296,8 +376,12 @@ export function formatIssuedAt(issuedAt: string): string {
  */
 export function timelineFor(
   product: CisProductName | undefined,
+  spec: TimelineSpec | undefined,
   catalogue: ProductCatalogue | undefined,
-): TimelineStep[] {
-  if (!product || !catalogue) return []
-  return timelineSteps(PRODUCT_TIMELINES[product], catalogue[product]?.latestData)
+): Timeline {
+  if (!product || !catalogue) return EMPTY_TIMELINE;
+  const shape = spec ?? PRODUCT_TIMELINES[product];
+  const steps = timelineSteps(shape, catalogue[product]?.latestData);
+  const initial = shape.direction === "forward" ? steps[0] : steps.at(-1);
+  return { steps, initialStepId: initial?.id ?? null };
 }

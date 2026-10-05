@@ -1,5 +1,7 @@
+import type { DroughtStatus } from "@/api/drought";
 import type { SeasonalMonth, SeasonalStationMonth } from "@/api/seasonal";
 import {
+  DROUGHT_STATUS_CLASSES,
   RAINFALL_FORECAST_SCALE,
   RAINFALL_PERCENT_OF_NORMAL_SCALE,
   RAINFALL_TERCILE_SCALES,
@@ -10,7 +12,11 @@ import {
 import type { ColorScale, Tercile } from "./colorScales";
 import { DEFAULT_PRODUCT_ID, variableKey } from "./products";
 import { symbologyModeFor } from "./rasters";
-import { finite, tercileProbabilities } from "./seasonalReadings";
+import {
+  dominantTercile,
+  finite,
+  tercileProbabilities,
+} from "./seasonalReadings";
 import type {
   SeasonalStationValueField,
   SeasonalValueField,
@@ -29,6 +35,11 @@ import type {
  * Generic over the month shape because the province and station rows are
  * different types on purpose (see SeasonalStationValueField): a row declared
  * for one cannot be read off the other.
+ *
+ * Colour is kept for the rows a variable is read for — percent of normal, the
+ * likeliest outcome, the anomaly, the max and min, a drought status — so the
+ * coloured strips in a card are the figures to read first. The rest print
+ * plain: they are the context those strips are read against.
  */
 export type DetailRow<M> =
   | (RowBase & {
@@ -50,8 +61,9 @@ export type DetailRow<M> =
 export type Figure = {
   text: string;
   /**
-   * The value's colour on the map (see paintAs), which the table reveals on
-   * hover. Absent for a quantity no published scale covers.
+   * The value's colour on the map (see paintAs), which the table paints into
+   * the figure's cell. Absent on a row that is not highlighted (see
+   * DetailRow), and for a quantity no published scale covers.
    */
   fill?: string;
   /**
@@ -72,6 +84,12 @@ type RowBase = {
   label: string;
   /** Set beside the label, not in every cell — the reference does the same. */
   unit?: string;
+  /**
+   * The cells are names — a drought status — rather than figures, and are set
+   * in the sans: the mono face is there to line digits up down a column, and
+   * "Not affected" has none.
+   */
+  named?: boolean;
 };
 
 /**
@@ -84,10 +102,7 @@ type RowBase = {
 export type DetailGroup<M> = {
   variableId: string;
   label: string;
-  /**
-   * The card's title and icon, and its table's outline: a colour the
-   * variable's own map uses.
-   */
+  /** The card's title and icon: a colour the variable's own map uses. */
   accent: string;
   /**
    * The rows in sections, each the rows about one quantity — a forecast, its
@@ -108,12 +123,19 @@ export type DetailGroup<M> = {
  */
 const RAINFALL_ACCENT = RAINFALL_FORECAST_SCALE.classAt(250).color;
 const TEMPERATURE_ACCENT = SEASONAL_TEMPERATURE_SCALE.classAt(30).color;
+/**
+ * Drought takes its strongest class, as temperature does: the milder ones are
+ * white and yellow, and neither carries text on a white panel.
+ */
+const DROUGHT_ACCENT =
+  DROUGHT_STATUS_CLASSES[DROUGHT_STATUS_CLASSES.length - 1].color;
 
 type Options = {
   unit?: string;
   decimals?: number;
   suffix?: string;
   signed?: boolean;
+  /** Highlights the row in its colour on the map (see DetailRow). */
   paint?: Paint;
 };
 
@@ -134,15 +156,6 @@ function paintAs(scale: ColorScale, layer: string): Paint {
 const seasonal = (variableId: string, layerId?: string) =>
   variableKey(DEFAULT_PRODUCT_ID, variableId, layerId);
 
-/**
- * Every quantity in millimetres takes the forecast's scale: a normal, a max or
- * a min is the same kind of monthly total, and a second table for it would
- * paint one amount two colours.
- */
-const RAINFALL = paintAs(
-  RAINFALL_FORECAST_SCALE,
-  seasonal("rainfall", "forecast"),
-);
 const PERCENT_OF_NORMAL = paintAs(
   RAINFALL_PERCENT_OF_NORMAL_SCALE,
   seasonal("rainfall", "percent-of-normal"),
@@ -154,10 +167,10 @@ const TERCILE_PAINTS: Record<Tercile, Paint> = {
   below: paintAs(RAINFALL_TERCILE_SCALES.below, TERCILE_LAYER),
 };
 /**
- * Every temperature takes the one seasonal temperature scale. It was drawn for
- * the mean, so a max over 30 °C sits in its top class. The anomaly takes its
- * own: it is a departure rather than a temperature, and on the mean's ramp
- * +0.6 °C would read as cool.
+ * The max and min take the one seasonal temperature scale. It was drawn for
+ * the mean, so a max over 30 °C sits in its top class. The anomaly takes its own: it is
+ * a departure rather than a temperature, and on the mean's ramp +0.6 °C would
+ * read as cool.
  */
 const TEMPERATURE = paintAs(
   SEASONAL_TEMPERATURE_SCALE,
@@ -246,20 +259,31 @@ export const TERCILE_NAMES: Record<Tercile, string> = {
  *
  * One row rather than three: together they are a single statement, 100% split
  * between the outcomes, and they are read against each other.
+ *
+ * Only the likeliest outcome is coloured: it is the month's forecast, and the
+ * other two say how sure of it the model is. Which one leads changes from
+ * month to month, so the colour steps between the bands down the row.
  */
 function terciles(label: string): DetailRow<SeasonalStationMonth> {
   return {
     kind: "stack",
     key: "terciles",
     label,
-    format: (month) =>
-      tercileProbabilities(month)?.map(({ tercile, probability }) => ({
+    format: (month) => {
+      const probabilities = tercileProbabilities(month);
+      if (probabilities === null) return null;
+      const likeliest = dominantTercile(probabilities).tercile;
+      return probabilities.map(({ tercile, probability }) => ({
         // Whole percent: the published bands are five points wide.
         text: `${probability.toFixed(0)}%`,
-        fill: TERCILE_PAINTS[tercile](probability),
+        fill:
+          tercile === likeliest
+            ? TERCILE_PAINTS[tercile](probability)
+            : undefined,
         tag: TERCILE_TAGS[tercile],
         label: TERCILE_NAMES[tercile],
-      })) ?? null,
+      }));
+    },
   };
 }
 
@@ -285,17 +309,14 @@ export const PROVINCE_GROUPS: readonly DetailGroup<SeasonalMonth>[] = [
         }),
         value<SeasonalMonth, SeasonalValueField>("rainfallMean", "Mean", {
           unit: "mm",
-          paint: RAINFALL,
         }),
       ],
       [
         value<SeasonalMonth, SeasonalValueField>("rainfallMax", "Max", {
           unit: "mm",
-          paint: RAINFALL,
         }),
         value<SeasonalMonth, SeasonalValueField>("rainfallMin", "Min", {
           unit: "mm",
-          paint: RAINFALL,
         }),
       ],
     ],
@@ -321,15 +342,12 @@ export const STATION_GROUPS: readonly DetailGroup<S>[] = [
     accent: RAINFALL_ACCENT,
     sections: [
       [
-        value<S, SF>("rainfallMean", "Mean", { unit: "mm", paint: RAINFALL }),
         value<S, SF>("rainfallPn", "% of normal", {
           suffix: "%",
           paint: PERCENT_OF_NORMAL,
         }),
-        value<S, SF>("rainfallNormal", "Normal", {
-          unit: "mm",
-          paint: RAINFALL,
-        }),
+        value<S, SF>("rainfallMean", "Mean", { unit: "mm" }),
+        value<S, SF>("rainfallNormal", "Normal", { unit: "mm" }),
       ],
       [terciles("Probability")],
     ],
@@ -340,25 +358,18 @@ export const STATION_GROUPS: readonly DetailGroup<S>[] = [
     accent: TEMPERATURE_ACCENT,
     sections: [
       [
-        value<S, SF>("tmean", "Mean", {
-          unit: "°C",
-          decimals: 1,
-          paint: TEMPERATURE,
-        }),
-        // Two decimals, the anomaly legend's own, so the printed figure and
-        // the class its fill comes from cannot disagree (see the reading in
-        // config/seasonalReadings).
         value<S, SF>("tmeanAnomaly", "Anomaly", {
           unit: "°C",
           decimals: 2,
           signed: true,
           paint: TEMPERATURE_ANOMALY,
         }),
-        value<S, SF>("tmeanNormal", "Normal", {
-          unit: "°C",
-          decimals: 1,
-          paint: TEMPERATURE,
-        }),
+        value<S, SF>("tmean", "Mean", { unit: "°C", decimals: 1 }),
+        // Two decimals, the anomaly legend's own, so the printed figure and
+        // the class its fill comes from cannot disagree (see the reading in
+        // config/seasonalReadings).
+
+        value<S, SF>("tmeanNormal", "Normal", { unit: "°C", decimals: 1 }),
       ],
       [
         value<S, SF>("tmax", "Max", {
@@ -366,15 +377,8 @@ export const STATION_GROUPS: readonly DetailGroup<S>[] = [
           decimals: 1,
           paint: TEMPERATURE,
         }),
-        range<S, SF>("tmaxLow", "tmaxHigh", "Max range", {
-          unit: "°C",
-          paint: TEMPERATURE,
-        }),
-        value<S, SF>("tmaxNormal", "Normal max", {
-          unit: "°C",
-          decimals: 1,
-          paint: TEMPERATURE,
-        }),
+        range<S, SF>("tmaxLow", "tmaxHigh", "Max range", { unit: "°C" }),
+        value<S, SF>("tmaxNormal", "Normal max", { unit: "°C", decimals: 1 }),
       ],
       [
         value<S, SF>("tmin", "Min", {
@@ -382,16 +386,83 @@ export const STATION_GROUPS: readonly DetailGroup<S>[] = [
           decimals: 1,
           paint: TEMPERATURE,
         }),
-        range<S, SF>("tminLow", "tminHigh", "Min range", {
-          unit: "°C",
-          paint: TEMPERATURE,
-        }),
-        value<S, SF>("tminNormal", "Normal min", {
-          unit: "°C",
-          decimals: 1,
-          paint: TEMPERATURE,
-        }),
+        range<S, SF>("tminLow", "tminHigh", "Min range", { unit: "°C" }),
+        value<S, SF>("tminNormal", "Normal min", { unit: "°C", decimals: 1 }),
       ],
     ],
   },
 ];
+
+/**
+ * One month of a place's drought status: a column of the detail panel's
+ * drought table, and of its region's.
+ *
+ * `date` is a timeline step rather than a month the series published, so a
+ * month with no issuance keeps its column and says so with a dash — the rule
+ * the scrubber keeps for the same months (see config/timeline
+ * DROUGHT_TIMELINES).
+ */
+export type DroughtPlaceMonth = {
+  id: string;
+  date: string;
+  /** Null where the month is unpublished, or says nothing about the place. */
+  status: DroughtStatus | null;
+  /**
+   * Every province's status that month, the place's among them — so the
+   * region's table reads its rows off the same columns. Null where the month
+   * is unpublished.
+   */
+  statuses: ReadonlyMap<string, DroughtStatus> | null;
+};
+
+/** Each status's published colour, by its name. */
+const DROUGHT_COLORS = new Map(
+  DROUGHT_STATUS_CLASSES.map((category) => [category.label, category.color]),
+);
+
+const droughtFigure = (status: DroughtStatus | null | undefined) =>
+  status ? { text: status, fill: DROUGHT_COLORS.get(status) } : null;
+
+/**
+ * A province's drought status: one card, and one row in each of its tables —
+ * the class by name, highlighted in its colour as the seasonal figures are.
+ *
+ * The published colour rather than the one the map paints: the map fades "Not
+ * affected" so the other classes stand out, but a cell naming the class is its
+ * key, as the legend and the popup's swatch are.
+ */
+export const DROUGHT_GROUPS: readonly DetailGroup<DroughtPlaceMonth>[] = [
+  {
+    variableId: "drought",
+    label: "Drought",
+    accent: DROUGHT_ACCENT,
+    sections: [
+      [
+        {
+          kind: "value",
+          key: "status",
+          label: "Status",
+          named: true,
+          format: ({ status }) => droughtFigure(status),
+        },
+      ],
+    ],
+  },
+];
+
+/**
+ * One province of a region in the region's drought table: its name, then its
+ * status in each month, printed and coloured as the place's own row is.
+ */
+export function droughtProvinceRow(
+  psgc: string,
+  name: string,
+): DetailRow<DroughtPlaceMonth> {
+  return {
+    kind: "value",
+    key: psgc,
+    label: name,
+    named: true,
+    format: ({ statuses }) => droughtFigure(statuses?.get(psgc)),
+  };
+}

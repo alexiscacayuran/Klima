@@ -54,6 +54,28 @@ export const GROUND: Record<BasemapId, string> = {
   positron: "#d8d9d6",
 };
 
+/**
+ * The colour the land's base coat is repainted in, or null to keep the
+ * basemap's own.
+ *
+ * The base coat is the basemap's `background`, which utils/basemapStyle →
+ * composeGround turns into the bottom of the land tier and draws at
+ * LAND_OPACITY over GROUND (or over the raster, where there is one). What a
+ * reader sees as land with no raster under it is therefore roughly
+ * `mix(GROUND, LAND_COAT, LAND_OPACITY)`, and this has to sit well away from
+ * GROUND to move the land at all: at 0.15 a step of 10 here is a step of 1.5
+ * on screen.
+ *
+ * Light needs one because Positron's own coat is near-white, which left its
+ * land a shade *lighter* than the sea and the coastline close to invisible.
+ * This one puts the land about 11 levels below the sea, around #cdceca. Dark's
+ * own rgb(12,12,12) already reads as darker land over its grey, so it is kept.
+ */
+export const LAND_COAT: Record<BasemapId, string | null> = {
+  dark: null,
+  positron: "#8c8f88",
+};
+
 /** Display names for the basemap toggle. */
 export const BASEMAP_LABELS: Record<BasemapId, string> = {
   dark: "Dark",

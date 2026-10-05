@@ -294,24 +294,29 @@ export function useBoundaryFocus(enabled = true) {
   })
 
   /**
-   * A selection cannot outlive the layer that could produce it.
+   * A hover cannot outlive the layer that could produce it.
    *
-   * Switching to a station-only product leaves whatever was pinned standing,
-   * and that pin would keep the boundary fills highlighting a province the map
-   * no longer draws — and keep LocationPopup quoting a province forecast for a
-   * quantity published only at stations. Cleared on the way out rather than
-   * guarded at each reader, for the same reason useResetOnLevelChange clears on
-   * a level change: the state is stale, not merely unused.
+   * Switching to a station-only product would leave the last reading standing,
+   * carving open a region the map no longer draws. Cleared on the way out
+   * rather than guarded at each reader, for the same reason
+   * useResetOnLevelChange clears on a level change: the state is stale, not
+   * merely unused.
+   *
+   * The pin is not cleared here. The selection provider puts it aside in the
+   * same commit as the layer change, and gives it back when a layer that draws
+   * boundaries is selected again (see MapSelection `suspendedPin`).
    */
   useEffect(() => {
     if (enabled) return
+    // A countdown already running would land its hover after this one, and
+    // the pin given back later freezes the hover wherever it lies.
+    cancelPending()
     setHover(NO_HOVER)
-    setPinned(null)
     if (map) map.getCanvas().style.cursor = ''
-    // The two setters are `useState`'s own and therefore stable, so listing them
-    // costs nothing: this still runs only when the layer stops drawing
-    // boundaries, not on every selection change.
-  }, [enabled, map, setHover, setPinned])
+    // The setter is `useState`'s own and therefore stable, so listing it costs
+    // nothing: this still runs only when the layer stops drawing boundaries,
+    // not on every selection change.
+  }, [enabled, map, setHover])
 
   useEffect(() => {
     if (!map) return

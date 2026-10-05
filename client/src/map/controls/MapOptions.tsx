@@ -8,6 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { TooltipCard } from "@/components/ui/tooltip-card";
 import { useMapSettings } from "@/map/state/useMapSettings";
 import { useStationVisibility } from "@/map/state/useStationVisibility";
 import { cn } from "@/lib/utils";
@@ -117,10 +118,11 @@ function OptionSwitch({
           className="data-checked:bg-brand"
         />
       </TooltipTrigger>
-      <TooltipContent className="font-cis">
-        {label}
-        {disabled && reason && <span className="opacity-70">· {reason}</span>}
-      </TooltipContent>
+      {disabled && reason ? (
+        <TooltipCard className="font-cis" title={label} description={reason} />
+      ) : (
+        <TooltipContent className="font-cis">{label}</TooltipContent>
+      )}
     </Tooltip>
   );
 }

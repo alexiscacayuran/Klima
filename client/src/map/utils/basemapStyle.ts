@@ -5,7 +5,6 @@ import {
   LABEL_HALO,
   LABEL_HALO_BLUR,
   LABEL_HALO_WIDTH,
-  PLACE_INK,
   placeClassTextSize,
 } from "@/map/config/labelTiers";
 
@@ -63,7 +62,9 @@ const isSea = (layer: LayerSpecification): layer is FillLayer =>
  *    LAND_OPACITY. This is the landmass: not a polygon — OpenMapTiles publishes
  *    none, and land is simply where the sea was not painted — but the same
  *    *silhouette*, arrived at from the other side. Drawn over the raster, so
- *    the forecast reads through the country as a tint.
+ *    the forecast reads through the country as a tint. The base coat takes
+ *    `landCoat` (config/styles → LAND_COAT) in place of the basemap's own
+ *    colour when one is given.
  * 3. **`sea`** — the basemap's water fill, repainted opaque in the ground
  *    colour. This is the mask that makes step 2 a landmass at all: it puts the
  *    sea back to bare ground, taking the land tint and the raster off the water
@@ -91,6 +92,7 @@ const isSea = (layer: LayerSpecification): layer is FillLayer =>
 export function composeGround(
   style: StyleSpecification,
   ground: string,
+  landCoat: string | null,
 ): StyleSpecification {
   const layers: LayerSpecification[] = [
     {
@@ -113,6 +115,9 @@ export function composeGround(
     const paint: Record<string, unknown> = { ...layer.paint };
     delete paint["fill-pattern"];
     paint[OPACITY_PROPERTY[layer.type]] = LAND_OPACITY;
+    if (layer.type === "background" && landCoat) {
+      paint["background-color"] = landCoat;
+    }
 
     layers.push({
       ...layer,
@@ -185,7 +190,7 @@ const KEPT_SYMBOL_SOURCE_LAYERS = new Set(["place"]);
  * `text-offset: [0.5, 0.2]` is then a label standing clear of a dot that is no
  * longer there, so both are dropped and the name sits on its own point.
  */
-function adoptLabelLayer(layer: SymbolLayer): SymbolLayer {
+function adoptLabelLayer(layer: SymbolLayer, ink: string): SymbolLayer {
   const {
     "icon-image": _icon,
     "text-offset": _offset,
@@ -205,7 +210,7 @@ function adoptLabelLayer(layer: SymbolLayer): SymbolLayer {
       "text-size": placeClassTextSize(),
     },
     paint: {
-      "text-color": PLACE_INK,
+      "text-color": ink,
       "text-halo-color": LABEL_HALO,
       "text-halo-width": LABEL_HALO_WIDTH,
       "text-halo-blur": LABEL_HALO_BLUR,
@@ -249,6 +254,7 @@ const LABEL_ANCHOR: LayerSpecification = {
  */
 export function adoptBasemapLabels(
   style: StyleSpecification,
+  placeInk: string,
 ): StyleSpecification {
   const base: LayerSpecification[] = [];
   const labels: LayerSpecification[] = [];
@@ -257,7 +263,7 @@ export function adoptBasemapLabels(
     if (layer.type !== "symbol") {
       base.push(layer);
     } else if (KEPT_SYMBOL_SOURCE_LAYERS.has(layer["source-layer"] ?? "")) {
-      labels.push(adoptLabelLayer(layer));
+      labels.push(adoptLabelLayer(layer, placeInk));
     }
   }
 

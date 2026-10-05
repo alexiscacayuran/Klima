@@ -96,6 +96,24 @@ export type MapSelection = {
   setPinned: (location: PinnedLocation | null) => void
 
   /**
+   * The pin a layer without boundaries has put aside, held until a layer that
+   * draws them is selected again. Null whenever `pinned` is set.
+   *
+   * A layer published only at stations has no polygon to light and no reading
+   * to quote for a province, so the pin cannot stay on the map; but switching
+   * to it is a look at something else, not a deselection, and coming back
+   * should find the place where it was. The provider puts the pin here on the
+   * way out and returns it on the way back — to a layer at the pin's own
+   * resolution only, since a province is not a place a municipality-level
+   * product publishes. A new subject replaces it: picking a station or a place
+   * forgets it.
+   *
+   * Read by the side panels, which keep the detail panel's request standing
+   * while the pin is held here, so the panel comes back with it.
+   */
+  suspendedPin: PinnedLocation | null
+
+  /**
    * The station a click selected, by its numeric id — never a PSGC.
    *
    * The other thing a click can pick, and exclusive with `pinned`: the detail
@@ -149,6 +167,7 @@ export const SelectionContext = createContext<MapSelection>({
   setHover: () => {},
   pinned: null,
   setPinned: () => {},
+  suspendedPin: null,
   station: null,
   setStation: () => {},
   location: null,

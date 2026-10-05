@@ -1,5 +1,6 @@
 import type { PropertyValueSpecification } from "maplibre-gl";
 import { FONTS } from "./styles";
+import type { BasemapId } from "./styles";
 import type { AdminLevel } from "@/map/types/features";
 
 /**
@@ -115,8 +116,18 @@ export type PlaceTier = (typeof PLACE_TIER_ORDER)[number];
  * other half of telling them apart: even at a glance, and even where a city name
  * sits right beside a province name, the two are different inks rather than two
  * steps of one.
+ *
+ * Per basemap, because the land under the name differs. On Dark it is a mid
+ * grey, and the ink can go as light as the administrative band allows. On Light
+ * it is around #cdceca, and the ink should stay clearly darker than that: lighten
+ * it towards the land colour and the letters fill with the land itself, leaving
+ * only the halo to read. Neither ink should reach the quietest administrative
+ * one, ADMIN_TIERS.municipality.
  */
-export const PLACE_INK = "#89857E";
+export const PLACE_INK: Record<BasemapId, string> = {
+  dark: "#BCB8B1",
+  positron: "#D4CFC5",
+};
 
 /**
  * Size alone, descending with the size of the thing named.
@@ -206,7 +217,7 @@ export const LABEL_FONT: string[] = [...FONTS.bold];
  * nobody controls, and the halo is the only mark here that is on no ramp: its
  * job is to be whatever the text is not.
  */
-export const LABEL_HALO = "rgba(6, 10, 16, 0.55)";
+export const LABEL_HALO = "rgba(10, 9, 4, 0.7)";
 export const LABEL_HALO_WIDTH = 1.4;
 export const LABEL_HALO_BLUR = 0.6;
 
